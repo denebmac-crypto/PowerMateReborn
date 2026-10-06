@@ -72,10 +72,13 @@ final class PowerMateConfigurationStore: ObservableObject {
 
         let deviceName = nextDeviceName()
 
-        var deviceProfile = configuration.profiles.first
-            ?? Self.makeEmptyProfile(name: "Default Profile")
-        deviceProfile.id = UUID()
-        deviceProfile.name = deviceName
+        // New devices inherit only the Default mapping, never another device's
+        // application-specific mappings.
+        var deviceProfile = Self.makeEmptyProfile(name: deviceName)
+        if let templateProfile = configuration.profiles.first,
+           let global = templateProfile.appProfiles.first(where: { $0.isGlobal }) {
+            deviceProfile.appProfiles = [global]
+        }
 
         configuration.profiles.append(deviceProfile)
 
@@ -146,7 +149,13 @@ final class PowerMateConfigurationStore: ObservableObject {
     }
 
     func forgetDevice(id: UUID) {
+        let profileID = configuration.devices.first(where: { $0.id == id })?.assignedProfileID
         configuration.devices.removeAll { $0.id == id }
+
+        if let profileID {
+            configuration.profiles.removeAll { $0.id == profileID }
+        }
+
         persist()
     }
 
