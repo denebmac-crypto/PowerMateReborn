@@ -310,7 +310,7 @@ struct PowerMateDeviceSettingsView: View {
         switch selection {
         case .profile(let profileID):
             if let profile = store.profile(id: profileID) {
-                ProfileDetailView(
+                ReusableProfileDetailView(
                     store: store,
                     profile: profile,
                     onAddApplication: { mappingID in
@@ -390,7 +390,7 @@ private struct RenameProfileRequest: Identifiable {
 
 // MARK: - Profile Detail
 
-private struct ProfileDetailView: View {
+private struct ReusableProfileDetailView: View {
     @ObservedObject var store: PowerMateConfigurationStore
     let profile: PowerMateProfile
     let onAddApplication: (UUID) -> Void
