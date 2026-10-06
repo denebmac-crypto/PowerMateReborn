@@ -270,26 +270,11 @@ class CustomModeEngine: ObservableObject {
         if let match = profile.appProfiles.first(where: {
             !$0.isGlobal && $0.bundleIdentifier == bundleID
         }) {
-            NSLog(
-                "Custom: selected app mapping '%@' for %@ (action L=%@ R=%@)",
-                match.name,
-                bundleID,
-                match.rotateLeft.type.rawValue,
-                match.rotateRight.type.rawValue
-            )
             return match
         }
 
         let fallback = profile.appProfiles.first(where: { $0.isGlobal })
             ?? profile.appProfiles.first
-
-        NSLog(
-            "Custom: selected Default mapping '%@' for %@ (target=%@ action L=%@ R=%@)",
-            fallback?.name ?? "none",
-            bundleID,
-            fallback?.rotateLeft.type.rawValue ?? "none",
-            fallback?.rotateRight.type.rawValue ?? "none"
-        )
 
         return fallback
     }
