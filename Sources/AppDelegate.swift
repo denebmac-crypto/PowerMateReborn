@@ -72,9 +72,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Only initialize Sparkle if running inside a proper .app bundle (prevents errors during `swift run`)
-        if Bundle.main.bundleURL.pathExtension == "app" {
-            updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
+        // Only initialize Sparkle when a valid appcast feed is configured.
+        // The distributable .app currently has no SUFeedURL, so keep updater disabled
+        // rather than starting Sparkle in an incomplete configuration.
+        if Bundle.main.bundleURL.pathExtension == "app",
+           let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+           !feedURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            updaterController = SPUStandardUpdaterController(
+                startingUpdater: true,
+                updaterDelegate: self,
+                userDriverDelegate: nil
+            )
         }
         
         loadSettings()
