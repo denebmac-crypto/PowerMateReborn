@@ -385,6 +385,11 @@ struct ActionConfigRow: View {
                             }
                         }
                         .frame(width: 260)
+
+                    case .canvasRotate:
+                        Text("PowerMate rotation is sent to the canvas as a smooth Shift+Space drag.")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
                     }
                 }
                 .padding(.leading, 4)
