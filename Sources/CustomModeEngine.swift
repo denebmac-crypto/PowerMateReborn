@@ -13,6 +13,7 @@ enum CodableActionType: String, Codable, CaseIterable, Identifiable {
     case midiCC
     case midiNote
     case osc
+    case canvasRotate
 
     var id: String { rawValue }
 
@@ -25,6 +26,7 @@ enum CodableActionType: String, Codable, CaseIterable, Identifiable {
         case .midiCC:     return "MIDI CC (Continuous)"
         case .midiNote:   return "MIDI Note"
         case .osc:        return "OSC Message"
+        case .canvasRotate: return "Canvas Rotate"
         }
     }
 }
@@ -124,6 +126,13 @@ class CustomModeEngine: ObservableObject {
 
     // Extended press state for device-assigned profiles.
     private var deviceExtendedPressActions: [PowerMateHardwareIdentity: CodableActionConfig] = [:]
+
+    // Smooth canvas-rotation gesture state for Clip Studio Paint.
+    private var canvasRotateActive = false
+    private var canvasRotateEndWorkItem: DispatchWorkItem?
+    private var canvasRotatePoint = CGPoint.zero
+    private let canvasRotatePixelsPerTick: Int64 = 4
+    private let canvasRotateIdleTimeout: TimeInterval = 0.12
 
     // CC accumulator for continuous rotation actions
     private var ccAccumulators: [UInt8: Float] = [:]  // ccNumber -> current 0-127 float
@@ -416,6 +425,10 @@ class CustomModeEngine: ObservableObject {
                 // For button press: send trigger
                 oscController.sendTrigger(action.osc.path, host: action.osc.host, port: action.osc.port)
             }
+
+        case .canvasRotate:
+            guard rotationDelta != 0 else { return }
+            executeCanvasRotate(rotationDelta: rotationDelta)
         }
     }
 
@@ -455,6 +468,89 @@ class CustomModeEngine: ObservableObject {
             keyUp.flags = flags
             keyUp.post(tap: .cgSessionEventTap)
         }
+    }
+
+    // MARK: - Smooth Canvas Rotation
+
+    /// Emulates CSP's continuous rotation gesture: hold Shift+Space and drag.
+    private func executeCanvasRotate(rotationDelta: Int) {
+        let deltaX = canvasRotatePixelsPerTick * Int64(rotationDelta)
+
+        canvasRotateEndWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.endCanvasRotateGesture()
+        }
+        canvasRotateEndWorkItem = work
+
+        if !canvasRotateActive {
+            canvasRotatePoint = NSEvent.mouseLocation
+
+            postKeyEvent(keyCode: 56, flags: .maskShift, keyDown: true)
+            postKeyEvent(keyCode: 49, flags: .maskShift, keyDown: true)
+
+            if let mouseDown = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseDown,
+                mouseCursorPosition: canvasRotatePoint,
+                mouseButton: .left
+            ) {
+                mouseDown.post(tap: .cgSessionEventTap)
+            }
+
+            canvasRotateActive = true
+        }
+
+        if let drag = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .leftMouseDragged,
+            mouseCursorPosition: canvasRotatePoint,
+            mouseButton: .left
+        ) {
+            drag.setIntegerValueField(.mouseEventDeltaX, value: deltaX)
+            drag.setIntegerValueField(.mouseEventDeltaY, value: 0)
+            drag.post(tap: .cgSessionEventTap)
+        }
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + canvasRotateIdleTimeout,
+            execute: work
+        )
+    }
+
+    private func endCanvasRotateGesture() {
+        guard canvasRotateActive else { return }
+
+        if let mouseUp = CGEvent(
+            mouseEventSource: nil,
+            mouseType: .leftMouseUp,
+            mouseCursorPosition: canvasRotatePoint,
+            mouseButton: .left
+        ) {
+            mouseUp.post(tap: .cgSessionEventTap)
+        }
+
+        postKeyEvent(keyCode: 49, flags: .maskShift, keyDown: false)
+        postKeyEvent(keyCode: 56, flags: [], keyDown: false)
+
+        canvasRotateActive = false
+        canvasRotateEndWorkItem = nil
+    }
+
+    private func postKeyEvent(
+        keyCode: CGKeyCode,
+        flags: CGEventFlags,
+        keyDown: Bool
+    ) {
+        guard let event = CGEvent(
+            keyboardEventSource: nil,
+            virtualKey: keyCode,
+            keyDown: keyDown
+        ) else {
+            return
+        }
+
+        event.flags = flags
+        event.post(tap: .cgSessionEventTap)
     }
 
     // MARK: - Media Keys
@@ -606,6 +702,9 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
+        canvasRotateEndWorkItem?.cancel()
+        endCanvasRotateGesture()
+
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
         }
