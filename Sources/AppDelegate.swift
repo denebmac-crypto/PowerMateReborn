@@ -85,6 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             )
         }
         
+        requestPostEventAccessIfNeeded()
         loadSettings()
         deviceConfiguration.seedDefaultProfileIfNeeded(from: customEngine.profiles)
         setupMenuBar()
@@ -104,6 +105,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         powerMate.setLEDBrightness(0)
         powerMate.stop()
         saveSettings()
+    }
+
+    private func requestPostEventAccessIfNeeded() {
+        guard !CGPreflightPostEventAccess() else { return }
+        NSLog("Accessibility: requesting post-event access")
+        _ = CGRequestPostEventAccess()
     }
 
     // MARK: - Menu Bar
