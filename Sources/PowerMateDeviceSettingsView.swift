@@ -84,6 +84,22 @@ struct PowerMateDeviceSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .tag(profile.id)
+                .contextMenu {
+                    Button("Duplicate Profile") {
+                        if let copy = store.duplicateProfile(id: profile.id) {
+                            selectedProfileID = copy.id
+                        }
+                    }
+
+                    if store.configuration.profiles.count > 1 {
+                        Button("Delete Profile", role: .destructive) {
+                            store.deleteProfile(id: profile.id)
+                            if selectedProfileID == profile.id {
+                                selectedProfileID = store.configuration.profiles.first?.id
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle("Profiles")
             .toolbar {
