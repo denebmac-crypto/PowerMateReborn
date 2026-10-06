@@ -71,7 +71,12 @@ jobs:
           SPARKLE_FRAMEWORK="$(find .build -type d -path '*/Sparkle.framework' -print -quit)"
           if [ -n "$SPARKLE_FRAMEWORK" ]; then
             cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
-            install_name_tool -change               "@rpath/Sparkle.framework/Versions/A/Sparkle"               "@executable_path/../Frameworks/Sparkle.framework/Versions/A/Sparkle"               "$APP/Contents/MacOS/PowerMateDriver"
+
+            SPARKLE_DEP="$(otool -L "$APP/Contents/MacOS/PowerMateDriver" | awk '/Sparkle.framework\\/Versions\\// {print $1; exit}')"
+            if [ -n "$SPARKLE_DEP" ]; then
+              SPARKLE_VERSION="$(basename "$(dirname "$SPARKLE_DEP")")"
+              install_name_tool -change                 "$SPARKLE_DEP"                 "@executable_path/../Frameworks/Sparkle.framework/Versions/$SPARKLE_VERSION/Sparkle"                 "$APP/Contents/MacOS/PowerMateDriver"
+            fi
           fi
 
           codesign --force --deep --sign - "$APP"
