@@ -6,6 +6,7 @@ final class PowerMateConfigurationStore: ObservableObject {
     static let shared = PowerMateConfigurationStore()
 
     @Published private(set) var configuration: PowerMateConfiguration
+    @Published private(set) var connectedIdentities: Set<PowerMateHardwareIdentity> = []
 
     private let userDefaultsKey = "powermate.deviceProfiles.configuration"
 
@@ -55,6 +56,14 @@ final class PowerMateConfigurationStore: ObservableObject {
         )
 
         return device
+    }
+
+    func markConnected(_ identity: PowerMateHardwareIdentity) {
+        connectedIdentities.insert(identity)
+    }
+
+    func markDisconnected(_ identity: PowerMateHardwareIdentity) {
+        connectedIdentities.remove(identity)
     }
 
     func device(
