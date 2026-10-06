@@ -1,60 +1,105 @@
 import Foundation
 
-// MARK: - High-Level Delegate (consumed by AppDelegate)
+// MARK: - High-Level Delegate
 
 protocol PowerMateDelegate: AnyObject {
-    func powerMateDidConnect()
-    func powerMateDidDisconnect()
-    func powerMateDidRotate(delta: Int)
-    func powerMateButtonPressed()       // single press
-    func powerMateButtonDoubleTapped()  // two presses within doubleTapInterval
-    func powerMateButtonLongPressed()   // hold >= longPressThreshold
-    func powerMateButtonReleased()      // raw button-up (for extended press / sustain)
+    func powerMateDidConnect(identity: PowerMateHardwareIdentity)
+    func powerMateDidDisconnect(identity: PowerMateHardwareIdentity)
+    func powerMateDidRotate(identity: PowerMateHardwareIdentity, delta: Int)
+    func powerMateButtonPressed(identity: PowerMateHardwareIdentity)
+    func powerMateButtonDoubleTapped(identity: PowerMateHardwareIdentity)
+    func powerMateButtonLongPressed(identity: PowerMateHardwareIdentity)
+    func powerMateButtonReleased(identity: PowerMateHardwareIdentity)
 }
 
 // MARK: - Transport Protocol
 
-/// Raw events from a hardware transport (USB or BLE).
-/// Transports should NOT perform gesture detection — just report raw hardware state.
 protocol PowerMateTransportDelegate: AnyObject {
-    func transportDidConnect(_ transport: PowerMateTransport)
-    func transportDidDisconnect(_ transport: PowerMateTransport)
-    func transport(_ transport: PowerMateTransport, didRotate delta: Int)
-    func transport(_ transport: PowerMateTransport, buttonStateChanged pressed: Bool)
+    func transportDidConnect(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity
+    )
+
+    func transportDidDisconnect(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity
+    )
+
+    func transport(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity,
+        didRotate delta: Int
+    )
+
+    func transport(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity,
+        buttonStateChanged pressed: Bool
+    )
 }
 
-/// A hardware transport that can communicate with a PowerMate device.
 protocol PowerMateTransport: AnyObject {
     var transportDelegate: PowerMateTransportDelegate? { get set }
     var isConnected: Bool { get }
     var ledBrightness: UInt8 { get }
+
     func start()
     func stop()
     func setLEDBrightness(_ brightness: UInt8)
+    func setLEDBrightness(
+        _ brightness: UInt8,
+        for identity: PowerMateHardwareIdentity
+    )
 }
 
-// MARK: - PowerMateManager
+// MARK: - Per-device Gesture State
 
-/// Central manager that owns all transports (USB, BLE) and performs unified gesture detection.
-/// AppDelegate talks only to this class via `PowerMateDelegate`.
+private final class GestureState {
+    var buttonDownTime: Date?
+    var longPressTimer: Timer?
+    var longPressFired = false
+
+    var tapCount = 0
+    var singleTapTimer: Timer?
+
+    var rotatedWhilePressed = false
+    var lastButtonState = false
+
+    func reset() {
+        singleTapTimer?.invalidate()
+        singleTapTimer = nil
+
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+
+        buttonDownTime = nil
+        longPressFired = false
+        tapCount = 0
+        rotatedWhilePressed = false
+        lastButtonState = false
+    }
+
+    deinit {
+        reset()
+    }
+}
+
+// MARK: - Manager
+
+/// Central manager for all PowerMate hardware transports.
+///
+/// Gesture state is deliberately keyed by hardware identity so multiple
+/// physical PowerMates can be used simultaneously without their button
+/// sequences interfering with one another.
 class PowerMateManager: PowerMateTransportDelegate {
     weak var delegate: PowerMateDelegate?
 
-    // Transports
     private var transports: [PowerMateTransport] = []
+    private var gestureStates: [PowerMateHardwareIdentity: GestureState] = [:]
 
-    // Gesture detection (extracted from the old PowerMateHID)
-    var longPressThreshold: TimeInterval = 0.5   // seconds
-    var doubleTapInterval: TimeInterval = 0.3    // max gap between taps
-    private var buttonDownTime: Date?
-    private var longPressTimer: Timer?
-    private var longPressFired: Bool = false
-    private var tapCount: Int = 0
-    private var singleTapTimer: Timer?
-    private var rotatedWhilePressed: Bool = false
-    private var lastButtonState: Bool = false
+    var longPressThreshold: TimeInterval = 0.5
+    var doubleTapInterval: TimeInterval = 0.3
 
-    // LED state (broadcast to all transports)
     private(set) var ledBrightness: UInt8 = 0
 
     init() {}
@@ -67,137 +112,185 @@ class PowerMateManager: PowerMateTransportDelegate {
     }
 
     func start() {
-        for transport in transports {
-            transport.start()
-        }
+        transports.forEach { $0.start() }
     }
 
     func stop() {
-        for transport in transports {
-            transport.stop()
-        }
+        transports.forEach { $0.stop() }
+        gestureStates.values.forEach { $0.reset() }
+        gestureStates.removeAll()
     }
 
     var isConnected: Bool {
-        return transports.contains(where: { $0.isConnected })
+        transports.contains { $0.isConnected }
     }
 
     // MARK: - LED Control
 
+    /// Broadcast LED brightness to every connected physical PowerMate.
     func setLEDBrightness(_ brightness: UInt8) {
         ledBrightness = brightness
+
         for transport in transports where transport.isConnected {
             transport.setLEDBrightness(brightness)
         }
     }
 
+    /// Set LED brightness for exactly one physical PowerMate.
+    func setLEDBrightness(
+        _ brightness: UInt8,
+        for identity: PowerMateHardwareIdentity
+    ) {
+        for transport in transports {
+            transport.setLEDBrightness(brightness, for: identity)
+        }
+    }
+
     // MARK: - PowerMateTransportDelegate
 
-    func transportDidConnect(_ transport: PowerMateTransport) {
-        // Sync LED state to newly connected device
-        transport.setLEDBrightness(ledBrightness)
-        delegate?.powerMateDidConnect()
+    func transportDidConnect(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity
+    ) {
+        gestureStates[identity] = GestureState()
+
+        // Sync the manager's current LED level only to the new device.
+        transport.setLEDBrightness(ledBrightness, for: identity)
+
+        delegate?.powerMateDidConnect(identity: identity)
     }
 
-    func transportDidDisconnect(_ transport: PowerMateTransport) {
-        // Clean up pending gesture timers if no devices remain
-        if !isConnected {
-            resetGestureState()
+    func transportDidDisconnect(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity
+    ) {
+        gestureStates[identity]?.reset()
+        gestureStates.removeValue(forKey: identity)
+
+        delegate?.powerMateDidDisconnect(identity: identity)
+    }
+
+    func transport(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity,
+        didRotate delta: Int
+    ) {
+        guard delta != 0 else { return }
+
+        let state = state(for: identity)
+        if state.buttonDownTime != nil {
+            state.rotatedWhilePressed = true
         }
-        delegate?.powerMateDidDisconnect()
+
+        delegate?.powerMateDidRotate(identity: identity, delta: delta)
     }
 
-    func transport(_ transport: PowerMateTransport, didRotate delta: Int) {
-        if buttonDownTime != nil {
-            rotatedWhilePressed = true
-        }
-        delegate?.powerMateDidRotate(delta: delta)
-    }
+    func transport(
+        _ transport: PowerMateTransport,
+        identity: PowerMateHardwareIdentity,
+        buttonStateChanged pressed: Bool
+    ) {
+        let state = state(for: identity)
+        guard pressed != state.lastButtonState else { return }
 
-    func transport(_ transport: PowerMateTransport, buttonStateChanged pressed: Bool) {
-        guard pressed != lastButtonState else { return }
-        lastButtonState = pressed
+        state.lastButtonState = pressed
+
         if pressed {
-            onButtonDown()
+            onButtonDown(identity: identity, state: state)
         } else {
-            onButtonUp()
+            onButtonUp(identity: identity, state: state)
         }
     }
 
     // MARK: - Gesture Detection
 
-    private func onButtonDown() {
-        buttonDownTime = Date()
-        longPressFired = false
-        rotatedWhilePressed = false
+    private func state(for identity: PowerMateHardwareIdentity) -> GestureState {
+        if let existing = gestureStates[identity] {
+            return existing
+        }
 
-        // Cancel pending single-tap timer (we got another press)
-        singleTapTimer?.invalidate()
-        singleTapTimer = nil
+        let created = GestureState()
+        gestureStates[identity] = created
+        return created
+    }
 
-        // Start long-press timer
-        longPressTimer?.invalidate()
-        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressThreshold, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            self.longPressFired = true
-            self.tapCount = 0
-            self.singleTapTimer?.invalidate()
-            self.singleTapTimer = nil
-            self.delegate?.powerMateButtonLongPressed()
+    private func onButtonDown(
+        identity: PowerMateHardwareIdentity,
+        state: GestureState
+    ) {
+        state.buttonDownTime = Date()
+        state.longPressFired = false
+        state.rotatedWhilePressed = false
+
+        state.singleTapTimer?.invalidate()
+        state.singleTapTimer = nil
+
+        state.longPressTimer?.invalidate()
+        state.longPressTimer = Timer.scheduledTimer(
+            withTimeInterval: longPressThreshold,
+            repeats: false
+        ) { [weak self, weak state] _ in
+            guard
+                let self,
+                let state,
+                state.buttonDownTime != nil,
+                !state.longPressFired
+            else {
+                return
+            }
+
+            state.longPressFired = true
+            state.tapCount = 0
+            state.singleTapTimer?.invalidate()
+            state.singleTapTimer = nil
+
+            self.delegate?.powerMateButtonLongPressed(identity: identity)
         }
     }
 
-    private func onButtonUp() {
-        longPressTimer?.invalidate()
-        longPressTimer = nil
+    private func onButtonUp(
+        identity: PowerMateHardwareIdentity,
+        state: GestureState
+    ) {
+        state.longPressTimer?.invalidate()
+        state.longPressTimer = nil
 
-        // Always notify raw release (for extended press / sustain actions)
-        delegate?.powerMateButtonReleased()
+        // Always expose the raw release for extended-press actions.
+        delegate?.powerMateButtonReleased(identity: identity)
 
-        guard !longPressFired else {
-            buttonDownTime = nil
-            longPressFired = false
-            rotatedWhilePressed = false
+        guard !state.longPressFired else {
+            state.buttonDownTime = nil
+            state.longPressFired = false
+            state.rotatedWhilePressed = false
             return
         }
 
-        guard !rotatedWhilePressed else {
-            buttonDownTime = nil
-            rotatedWhilePressed = false
+        guard !state.rotatedWhilePressed else {
+            state.buttonDownTime = nil
+            state.rotatedWhilePressed = false
             return
         }
 
-        tapCount += 1
+        state.tapCount += 1
 
-        if tapCount >= 2 {
-            // Double tap detected
-            tapCount = 0
-            singleTapTimer?.invalidate()
-            singleTapTimer = nil
-            delegate?.powerMateButtonDoubleTapped()
+        if state.tapCount >= 2 {
+            state.tapCount = 0
+            state.singleTapTimer?.invalidate()
+            state.singleTapTimer = nil
+            delegate?.powerMateButtonDoubleTapped(identity: identity)
         } else {
-            // First tap — wait for possible second tap
-            singleTapTimer?.invalidate()
-            singleTapTimer = Timer.scheduledTimer(withTimeInterval: doubleTapInterval, repeats: false) { [weak self] _ in
-                guard let self = self else { return }
-                self.tapCount = 0
-                self.delegate?.powerMateButtonPressed()
+            state.singleTapTimer?.invalidate()
+            state.singleTapTimer = Timer.scheduledTimer(
+                withTimeInterval: doubleTapInterval,
+                repeats: false
+            ) { [weak self, weak state] _ in
+                guard let self, let state else { return }
+                state.tapCount = 0
+                self.delegate?.powerMateButtonPressed(identity: identity)
             }
         }
 
-        buttonDownTime = nil
-        longPressFired = false
-    }
-
-    private func resetGestureState() {
-        singleTapTimer?.invalidate()
-        singleTapTimer = nil
-        longPressTimer?.invalidate()
-        longPressTimer = nil
-        buttonDownTime = nil
-        longPressFired = false
-        tapCount = 0
-        lastButtonState = false
-        rotatedWhilePressed = false
+        state.buttonDownTime = nil
+        state.longPressFired = false
     }
 }
