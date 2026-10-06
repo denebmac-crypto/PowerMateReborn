@@ -1,4 +1,4 @@
-name: Build macOS
+name: Build macOS App
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  swift-build:
+  build-app:
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -19,4 +19,69 @@ jobs:
           xcode-version: latest-stable
 
       - name: Build
-        run: swift build -c release
+        run: swift build -c release --product PowerMateDriver
+
+      - name: Package app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP="PowerMateDriver.app"
+          rm -rf "$APP" PowerMateDriver.dmg
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          mkdir -p "$APP/Contents/Frameworks"
+
+          cp ".build/release/PowerMateDriver" "$APP/Contents/MacOS/PowerMateDriver"
+
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>PowerMateDriver</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.denebmac.PowerMateDriver</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>PowerMateReborn</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>LSUIElement</key>
+            <true/>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+
+          for bundle in .build/release/*.bundle; do
+            [ -e "$bundle" ] || continue
+            cp -R "$bundle" "$APP/Contents/Resources/"
+          done
+
+          SPARKLE_FRAMEWORK="$(find .build -type d -path '*/Sparkle.framework' -print -quit)"
+          if [ -n "$SPARKLE_FRAMEWORK" ]; then
+            cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
+            install_name_tool -change               "@rpath/Sparkle.framework/Versions/A/Sparkle"               "@executable_path/../Frameworks/Sparkle.framework/Versions/A/Sparkle"               "$APP/Contents/MacOS/PowerMateDriver"
+          fi
+
+          codesign --force --deep --sign - "$APP"
+
+          hdiutil create             -volname "PowerMateReborn"             -srcfolder "$APP"             -ov             -format UDZO             "PowerMateDriver.dmg"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PowerMateReborn-macOS
+          path: |
+            PowerMateDriver.app
+            PowerMateDriver.dmg
