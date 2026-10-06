@@ -630,6 +630,128 @@ class CustomModeEngine: ObservableObject {
         }
     }
 
+    /// CSP officially documents Shift + mouse wheel as a canvas-rotation
+    /// operation. The important part here is preserving the scroll gesture:
+    /// one began event, followed by changed events, then one ended event.
+    ///
+    /// The previous implementation ended the gesture after only 0.20 s of
+    /// inactivity. That could split a deliberate single-device turn into
+    /// separate gestures. The old two-device test accidentally kept this
+    /// shared stream alive because the second device kept resetting the
+    /// timeout. Keep that useful behavior intentionally, without requiring
+    /// two devices or moving the cursor.
+    private func executeCanvasRotateContinuousShiftWheel(delta: Int32) {
+        guard delta != 0 else { return }
+
+        continuousCanvasRotateEndWorkItem?.cancel()
+
+        let source = CGEventSource(stateID: .hidSystemState)
+        let phase: CGScrollPhase = continuousCanvasRotateActive ? .changed : .began
+
+        if !continuousCanvasRotateActive {
+            guard let shiftDown = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: 56,
+                keyDown: true
+            ) else {
+                return
+            }
+
+            shiftDown.flags = .maskShift
+            shiftDown.post(tap: .cgSessionEventTap)
+            continuousCanvasRotateActive = true
+        }
+
+        guard let wheel = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: delta,
+            wheel2: 0,
+            wheel3: 0
+        ) else {
+            endCanvasRotateContinuousShiftWheel()
+            return
+        }
+
+        wheel.flags = .maskShift
+        wheel.setIntegerValueField(
+            .scrollWheelEventIsContinuous,
+            value: 1
+        )
+        wheel.setDoubleValueField(
+            .scrollWheelEventFixedPtDeltaAxis1,
+            value: Double(delta)
+        )
+        wheel.setIntegerValueField(
+            .scrollWheelEventScrollPhase,
+            value: Int64(phase.rawValue)
+        )
+        wheel.setIntegerValueField(
+            .scrollWheelEventMomentumPhase,
+            value: 0
+        )
+        wheel.post(tap: .cgSessionEventTap)
+
+        let endWorkItem = DispatchWorkItem { [weak self] in
+            self?.endCanvasRotateContinuousShiftWheel()
+        }
+        continuousCanvasRotateEndWorkItem = endWorkItem
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + continuousCanvasRotateIdleTimeout,
+            execute: endWorkItem
+        )
+    }
+
+    private func endCanvasRotateContinuousShiftWheel() {
+        continuousCanvasRotateEndWorkItem?.cancel()
+        continuousCanvasRotateEndWorkItem = nil
+
+        guard continuousCanvasRotateActive else { return }
+
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        if let wheelEnd = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: 0,
+            wheel2: 0,
+            wheel3: 0
+        ) {
+            wheelEnd.flags = .maskShift
+            wheelEnd.setIntegerValueField(
+                .scrollWheelEventIsContinuous,
+                value: 1
+            )
+            wheelEnd.setDoubleValueField(
+                .scrollWheelEventFixedPtDeltaAxis1,
+                value: 0
+            )
+            wheelEnd.setIntegerValueField(
+                .scrollWheelEventScrollPhase,
+                value: Int64(CGScrollPhase.ended.rawValue)
+            )
+            wheelEnd.setIntegerValueField(
+                .scrollWheelEventMomentumPhase,
+                value: 0
+            )
+            wheelEnd.post(tap: .cgSessionEventTap)
+        }
+
+        if let shiftUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 56,
+            keyDown: false
+        ) {
+            shiftUp.flags = []
+            shiftUp.post(tap: .cgSessionEventTap)
+        }
+
+        continuousCanvasRotateActive = false
+    }
+
     /// Known-good cursor-free fallback: CSP's Shift + mouse wheel.
     private func executeCanvasRotateShiftWheel(delta: Int32) {
         let source = CGEventSource(stateID: .hidSystemState)
@@ -831,6 +953,8 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
+        endCanvasRotateContinuousShiftWheel()
+
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
         }
