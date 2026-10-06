@@ -27,7 +27,8 @@ let package = Package(
                 .linkedFramework("CoreBluetooth"),
                 .linkedFramework("AppKit"),
                 .linkedFramework("CoreGraphics"),
-                .linkedFramework("Sparkle", .when(platforms: [.macOS]))
+                // Sparkle is optional during `swift run`; the distributable .app bundles it.
+                .unsafeFlags(["-Xlinker", "-weak_framework", "-Xlinker", "Sparkle"], .when(platforms: [.macOS]))
             ]
         )
     ]
