@@ -840,7 +840,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             let window = NSWindow(contentViewController: hostingController)
             window.title = "PowerMate Devices & Profiles"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 820, height: 600))
+            window.setContentSize(NSSize(width: 900, height: 620))
 
             deviceSettingsWindowController = NSWindowController(window: window)
         }
