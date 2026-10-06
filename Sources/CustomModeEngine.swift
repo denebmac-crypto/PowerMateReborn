@@ -860,8 +860,6 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
-        endCanvasRotateContinuousShiftWheel()
-
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
         }
