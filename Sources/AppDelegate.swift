@@ -78,6 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         }
         
         loadSettings()
+        deviceConfiguration.seedDefaultProfileIfNeeded(from: customEngine.profiles)
         setupMenuBar()
         volumeController.delegate = self
         let usbTransport = PowerMateUSBTransport()
