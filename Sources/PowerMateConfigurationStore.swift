@@ -26,6 +26,37 @@ final class PowerMateConfigurationStore: ObservableObject {
         }
     }
 
+    /// One-time migration bridge from the existing Custom Mode profile library.
+    /// It preserves existing mappings when the reusable device-profile system is introduced.
+    func seedDefaultProfileIfNeeded(from legacyProfiles: [CodableAppProfile]) {
+        guard
+            configuration.profiles.count == 1,
+            configuration.profiles[0].name == "Default Profile"
+        else {
+            return
+        }
+
+        let current = configuration.profiles[0].appProfiles
+        let hasConfiguredAction = current.contains { app in
+            app.rotateLeft.type != .unassigned ||
+            app.rotateRight.type != .unassigned ||
+            app.singleClick.type != .unassigned ||
+            app.doubleClick.type != .unassigned ||
+            app.longPressAction.type != .unassigned
+        }
+
+        guard !hasConfiguredAction, !legacyProfiles.isEmpty else {
+            return
+        }
+
+        configuration.profiles[0].appProfiles = legacyProfiles
+        persist()
+        NSLog(
+            "Config: seeded Default Profile from %d existing Custom Mode profile(s)",
+            legacyProfiles.count
+        )
+    }
+
     // MARK: - Devices
 
     @discardableResult
@@ -118,6 +149,20 @@ final class PowerMateConfigurationStore: ObservableObject {
         configuration.profiles.append(profile)
         persist()
         return profile
+    }
+
+    @discardableResult
+    func duplicateProfile(id: UUID) -> PowerMateProfile? {
+        guard let source = profile(id: id) else {
+            return nil
+        }
+
+        var copy = source
+        copy.id = UUID()
+        copy.name = source.name + " Copy"
+        configuration.profiles.append(copy)
+        persist()
+        return copy
     }
 
     func updateProfile(_ profile: PowerMateProfile) {
