@@ -245,18 +245,35 @@ class CustomModeEngine: ObservableObject {
     /// A non-global profile matching the frontmost application's bundle ID wins;
     /// otherwise the reusable profile's Global Default is used.
     func activeAppProfile(in profile: PowerMateProfile) -> CodableAppProfile? {
-        let bundleID = currentBundleID
-            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        // Resolve the frontmost application at the moment of input. The
+        // cached observer value is only a fallback; otherwise a Profile
+        // edited for CSP could accidentally execute its Default mapping.
+        let bundleID =
+            NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            ?? currentBundleID
             ?? ""
 
         if let match = profile.appProfiles.first(where: {
             !$0.isGlobal && $0.bundleIdentifier == bundleID
         }) {
+            NSLog(
+                "Custom: selected app mapping '%@' for %@",
+                match.name,
+                bundleID
+            )
             return match
         }
 
-        return profile.appProfiles.first(where: { $0.isGlobal })
+        let fallback = profile.appProfiles.first(where: { $0.isGlobal })
             ?? profile.appProfiles.first
+
+        NSLog(
+            "Custom: selected Default mapping '%@' for %@",
+            fallback?.name ?? "none",
+            bundleID
+        )
+
+        return fallback
     }
 
     /// Device-aware rotation dispatch. The reusable device Profile supplies
