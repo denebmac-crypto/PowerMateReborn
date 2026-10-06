@@ -453,7 +453,8 @@ final class PowerMateConfigurationStore: ObservableObject {
             changed = true
         }
 
-        // Drop invalid Profile references but never delete the Profile object.
+        // Repair invalid device -> Profile references without deleting the
+        // Profile itself.
         let profileIDs = Set(configuration.profiles.map(\.id))
         for index in configuration.devices.indices {
             if let assignedID = configuration.devices[index].assignedProfileID,
@@ -463,16 +464,112 @@ final class PowerMateConfigurationStore: ObservableObject {
             }
         }
 
-        // Convert legacy letter names to numeric names and fill missing /
-        // duplicate names with the next unused number. Once assigned, the
-        // numeric name remains stable until the hardware record is forgotten.
+        // The original migration created a placeholder "Default Profile".
+        // Remove it only while it is still untouched and no hardware uses it.
+        let placeholderAppProfiles = Self.makeEmptyProfile(
+            name: "Default Profile"
+        ).appProfiles
+
+        if configuration.profiles.count > 1,
+           let placeholder = configuration.profiles.first(where: { profile in
+               profile.name == "Default Profile" &&
+               profile.appProfiles == placeholderAppProfiles &&
+               !configuration.devices.contains(where: { device in
+                   device.assignedProfileID == profile.id
+               })
+           }) {
+            configuration.profiles.removeAll { $0.id == placeholder.id }
+            changed = true
+            NSLog("Config: removed unused legacy Default Profile placeholder")
+        }
+
+        // Collapse exact duplicate legacy Profiles. The old device-owned
+        // implementation could create "PowerMate B" twice when splitting a
+        // shared Profile. Keep the copy currently assigned to hardware and
+        // remove the unused identical copy. Profiles with different settings
+        // are never merged.
+        var replacements: [UUID: UUID] = [:]
+        var removeProfileIDs = Set<UUID>()
+
+        let names = Set(configuration.profiles.map(\.name))
+        for name in names {
+            let group = configuration.profiles.filter { $0.name == name }
+            guard group.count > 1 else { continue }
+
+            for candidate in group {
+                guard !removeProfileIDs.contains(candidate.id) else { continue }
+
+                let exactDuplicates = group.filter {
+                    $0.id != candidate.id &&
+                    !removeProfileIDs.contains($0.id) &&
+                    $0.appProfiles == candidate.appProfiles
+                }
+
+                guard !exactDuplicates.isEmpty else { continue }
+
+                let candidateAssigned = configuration.devices.contains {
+                    $0.assignedProfileID == candidate.id
+                }
+
+                // Prefer the assigned Profile. If neither is assigned, keep
+                // the first candidate encountered and remove later clones.
+                if !candidateAssigned {
+                    let preferred = exactDuplicates.first(where: { duplicate in
+                        configuration.devices.contains {
+                            $0.assignedProfileID == duplicate.id
+                        }
+                    })
+
+                    if let preferred {
+                        replacements[candidate.id] = preferred.id
+                        removeProfileIDs.insert(candidate.id)
+                    } else {
+                        let duplicate = exactDuplicates[0]
+                        replacements[duplicate.id] = candidate.id
+                        removeProfileIDs.insert(duplicate.id)
+                    }
+                } else {
+                    for duplicate in exactDuplicates {
+                        if !configuration.devices.contains(where: {
+                            $0.assignedProfileID == duplicate.id
+                        }) {
+                            replacements[duplicate.id] = candidate.id
+                            removeProfileIDs.insert(duplicate.id)
+                        }
+                    }
+                }
+            }
+        }
+
+        if !replacements.isEmpty {
+            for index in configuration.devices.indices {
+                if let assignedID = configuration.devices[index].assignedProfileID,
+                   let replacementID = replacements[assignedID] {
+                    configuration.devices[index].assignedProfileID = replacementID
+                }
+            }
+
+            configuration.profiles.removeAll {
+                removeProfileIDs.contains($0.id)
+            }
+
+            changed = true
+            NSLog(
+                "Config: collapsed %d redundant legacy duplicate Profile(s)",
+                removeProfileIDs.count
+            )
+        }
+
+        // Keep numeric hardware names stable. A legacy A/B/C name is converted
+        // once; existing numeric names are preserved.
         var usedNumbers = Set<Int>()
 
         for index in configuration.devices.indices {
             let oldName = configuration.devices[index].name
             let candidateNumber = Self.legacyOrNumericDeviceNumber(from: oldName)
-            let number = candidateNumber.flatMap { usedNumbers.contains($0) ? nil : $0 }
-                ?? nextAvailableNumber(usedNumbers)
+            let number = candidateNumber.flatMap {
+                usedNumbers.contains($0) ? nil : $0
+            } ?? nextAvailableNumber(usedNumbers)
 
             usedNumbers.insert(number)
 
