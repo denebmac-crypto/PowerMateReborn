@@ -37,6 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
 
     private var statusItem: NSStatusItem!
     private var powerMate = PowerMateManager()
+    private let deviceConfiguration = PowerMateConfigurationStore.shared
     private var volumeController = VolumeController()
     private(set) var brightnessController = BrightnessController()
     private var midiController = MIDIController()
@@ -63,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
 
     // UI Window Controllers
     private var customSettingsWindowController: NSWindowController?
+    private var deviceSettingsWindowController: NSWindowController?
 
     override init() {
         super.init()
@@ -431,6 +433,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         menu.addItem(syncItem)
 
         menu.addItem(NSMenuItem.separator())
+
+        // PowerMate Device / Profile Settings
+        let deviceProfilesItem = NSMenuItem(title: "PowerMate Devices & Profiles...", action: #selector(showDeviceProfiles), keyEquivalent: "")
+        deviceProfilesItem.target = self
+        if let img = NSImage(systemSymbolName: "dial.medium", accessibilityDescription: nil) {
+            deviceProfilesItem.image = img
+        }
+        menu.addItem(deviceProfilesItem)
 
         // Custom Mode Settings
         let customSettingsItem = NSMenuItem(title: "Custom Mode Settings...", action: #selector(showCustomSettings), keyEquivalent: "")
@@ -815,6 +825,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         }
     }
 
+    @objc private func showDeviceProfiles() {
+        if deviceSettingsWindowController == nil {
+            let settingsView = PowerMateDeviceSettingsView()
+            let hostingController = NSHostingController(rootView: settingsView)
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = "PowerMate Devices & Profiles"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.setContentSize(NSSize(width: 820, height: 600))
+
+            deviceSettingsWindowController = NSWindowController(window: window)
+        }
+
+        deviceSettingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc private func showCustomSettings() {
         if customSettingsWindowController == nil {
             let settingsView = CustomModeSettingsView()
@@ -997,7 +1023,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
 
     // MARK: - LED Helpers
 
-    private func updateLEDForLevel() {
+    private func updateLEDForLevel(
+        for identity: PowerMateHardwareIdentity? = nil
+    ) {
         guard ledFollowsLevel else { return }
 
         var level: Float = 0
@@ -1011,113 +1039,211 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         case .custom:
             level = 0.5
         }
+
         let ledVal = UInt8(max(0, min(255, level * 255)))
-        powerMate.setLEDBrightness(ledVal)
+
+        if let identity {
+            powerMate.setLEDBrightness(ledVal, for: identity)
+        } else {
+            powerMate.setLEDBrightness(ledVal)
+        }
     }
 
     // MARK: - PowerMateDelegate
 
-    func powerMateDidConnect() {
-        NSLog("PowerMate connected")
+    func powerMateDidConnect(identity: PowerMateHardwareIdentity) {
+        deviceConfiguration.registerDevice(identity: identity)
+        deviceConfiguration.markConnected(identity)
+
+        NSLog(
+            "PowerMate connected: %@ (%@)",
+            identity.transportType.displayName,
+            identity.identifier
+        )
+
         updateStatusDisplay()
         refreshMenu()
-        updateLEDForLevel()
+        updateLEDForLevel(for: identity)
     }
 
-    func powerMateDidDisconnect() {
-        NSLog("PowerMate disconnected")
+    func powerMateDidDisconnect(identity: PowerMateHardwareIdentity) {
+        deviceConfiguration.markDisconnected(identity)
+
+        NSLog(
+            "PowerMate disconnected: %@ (%@)",
+            identity.transportType.displayName,
+            identity.identifier
+        )
+
         updateStatusDisplay()
         refreshMenu()
     }
 
-    func powerMateDidRotate(delta: Int) {
-        let adjustment = Float(delta) * stepSize
-
+    func powerMateDidRotate(
+        identity: PowerMateHardwareIdentity,
+        delta: Int
+    ) {
         switch currentMode {
         case .volume:
+            let adjustment = Float(delta) * stepSize
             volumeController.adjustVolume(by: adjustment)
-            osd.showVolume(level: volumeController.getVolume(), muted: volumeController.isMuted())
+            osd.showVolume(
+                level: volumeController.getVolume(),
+                muted: volumeController.isMuted()
+            )
+
         case .brightness:
+            let adjustment = Float(delta) * stepSize
             brightnessController.updateTargetDisplay()
             brightnessController.adjustBrightness(by: adjustment)
-            osd.showBrightness(level: brightnessController.getCurrentBrightness())
+            osd.showBrightness(
+                level: brightnessController.getCurrentBrightness()
+            )
+
         case .midi:
+            let adjustment = Float(delta) * stepSize
             midiController.adjustCC(by: adjustment)
+
         case .custom:
-            customEngine.handleRotation(delta: delta, stepSize: stepSize)
+            if let profile = deviceConfiguration.profile(for: identity) {
+                customEngine.handleRotation(
+                    delta: delta,
+                    stepSize: stepSize,
+                    profile: profile
+                )
+            } else {
+                customEngine.handleRotation(
+                    delta: delta,
+                    stepSize: stepSize
+                )
+            }
         }
-        updateLEDForLevel()
+
+        updateLEDForLevel(for: identity)
         updateMenuLevels()
     }
 
-    func powerMateButtonPressed() {
-        NSLog("Button: single press [%@]", currentMode.rawValue)
+    func powerMateButtonPressed(
+        identity: PowerMateHardwareIdentity
+    ) {
+        NSLog(
+            "Button: single press [%@] (%@)",
+            currentMode.rawValue,
+            identity.identifier
+        )
+
         switch currentMode {
         case .volume:
-            // Tap = snap to preset (20%), tap again = restore
             if let saved = volumeBeforeSnap {
                 volumeController.setVolume(saved)
                 volumeBeforeSnap = nil
-                NSLog("Volume: restored to %.0f%%", saved * 100)
             } else {
                 volumeBeforeSnap = volumeController.getVolume()
                 volumeController.setVolume(volumeSnapValue)
-                NSLog("Volume: snapped to %.0f%%", volumeSnapValue * 100)
             }
-            osd.showVolume(level: volumeController.getVolume(), muted: volumeController.isMuted())
+
+            osd.showVolume(
+                level: volumeController.getVolume(),
+                muted: volumeController.isMuted()
+            )
 
         case .brightness:
-            // Tap = snap to night mode (15%), tap again = restore
             if let saved = brightnessBeforeSnap {
                 brightnessController.setBrightness(saved)
                 brightnessBeforeSnap = nil
-                NSLog("Brightness: restored to %.0f%%", saved * 100)
             } else {
                 brightnessBeforeSnap = brightnessController.getCurrentBrightness()
                 brightnessController.setBrightness(brightnessSnapValue)
-                NSLog("Brightness: night mode %.0f%%", brightnessSnapValue * 100)
             }
-            osd.showBrightness(level: brightnessController.getCurrentBrightness())
+
+            osd.showBrightness(
+                level: brightnessController.getCurrentBrightness()
+            )
 
         case .midi:
             midiController.toggleNote()
+
         case .custom:
-            customEngine.handleSingleTap()
+            if let profile = deviceConfiguration.profile(for: identity) {
+                customEngine.handleSingleTap(profile: profile)
+            } else {
+                customEngine.handleSingleTap()
+            }
         }
-        updateLEDForLevel()
+
+        updateLEDForLevel(for: identity)
         refreshMenu()
     }
 
-    func powerMateButtonDoubleTapped() {
-        NSLog("Button: double tap [%@]", currentMode.rawValue)
+    func powerMateButtonDoubleTapped(
+        identity: PowerMateHardwareIdentity
+    ) {
+        NSLog(
+            "Button: double tap [%@] (%@)",
+            currentMode.rawValue,
+            identity.identifier
+        )
+
         switch currentMode {
         case .volume:
             volumeController.toggleMute()
-            osd.showVolume(level: volumeController.getVolume(), muted: volumeController.isMuted())
+            osd.showVolume(
+                level: volumeController.getVolume(),
+                muted: volumeController.isMuted()
+            )
+
         case .brightness:
             brightnessController.sleepDisplay()
+
         case .midi:
             midiController.toggleNote()
+
         case .custom:
-            customEngine.handleDoubleTap()
+            if let profile = deviceConfiguration.profile(for: identity) {
+                customEngine.handleDoubleTap(profile: profile)
+            } else {
+                customEngine.handleDoubleTap()
+            }
         }
-        updateLEDForLevel()
+
+        updateLEDForLevel(for: identity)
         refreshMenu()
     }
 
-    func powerMateButtonLongPressed() {
-        // In Custom mode, the engine may override the long press
-        if currentMode == .custom && customEngine.handleLongPress() {
-            NSLog("Button: long press consumed by Custom profile")
+    func powerMateButtonLongPressed(
+        identity: PowerMateHardwareIdentity
+    ) {
+        if currentMode == .custom,
+           let profile = deviceConfiguration.profile(for: identity),
+           customEngine.handleLongPress(
+               profile: profile,
+               identity: identity
+           ) {
+            NSLog(
+                "Button: long press consumed by device profile (%@)",
+                identity.identifier
+            )
             return
         }
-        NSLog("Button: long press -> cycle mode")
+
+        NSLog(
+            "Button: long press -> cycle mode (%@)",
+            identity.identifier
+        )
         cycleMode()
     }
 
-    func powerMateButtonReleased() {
-        // Forward raw release to the custom engine for extended press support
-        if currentMode == .custom {
+    func powerMateButtonReleased(
+        identity: PowerMateHardwareIdentity
+    ) {
+        guard currentMode == .custom else { return }
+
+        if let profile = deviceConfiguration.profile(for: identity) {
+            customEngine.handleButtonReleased(
+                profile: profile,
+                identity: identity
+            )
+        } else {
             customEngine.handleButtonReleased()
         }
     }
