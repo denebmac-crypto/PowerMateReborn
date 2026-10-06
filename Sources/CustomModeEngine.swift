@@ -118,9 +118,12 @@ class CustomModeEngine: ObservableObject {
     let oscController = OSCController()
     let midiController = MIDIController()
 
-    // Extended press state
+    // Extended press state (legacy single-profile mode)
     private(set) var extendedPressActive: Bool = false
     private var extendedPressAction: CodableActionConfig?
+
+    // Extended press state for device-assigned profiles.
+    private var deviceExtendedPressActions: [PowerMateHardwareIdentity: CodableActionConfig] = [:]
 
     // CC accumulator for continuous rotation actions
     private var ccAccumulators: [UInt8: Float] = [:]  // ccNumber -> current 0-127 float
@@ -228,6 +231,102 @@ class CustomModeEngine: ObservableObject {
     }
 
     // MARK: - Gesture Dispatch
+
+    /// Select the application profile inside a device-assigned reusable Profile.
+    /// A non-global profile matching the frontmost application's bundle ID wins;
+    /// otherwise the reusable profile's Global Default is used.
+    func activeAppProfile(in profile: PowerMateProfile) -> CodableAppProfile? {
+        let bundleID = currentBundleID
+            ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            ?? ""
+
+        if let match = profile.appProfiles.first(where: {
+            !$0.isGlobal && $0.bundleIdentifier == bundleID
+        }) {
+            return match
+        }
+
+        return profile.appProfiles.first(where: { $0.isGlobal })
+            ?? profile.appProfiles.first
+    }
+
+    /// Device-aware rotation dispatch. The reusable device Profile supplies
+    /// the actual Custom Mode mapping while the existing action executor remains shared.
+    func handleRotation(
+        delta: Int,
+        stepSize: Float,
+        profile: PowerMateProfile
+    ) {
+        guard let appProfile = activeAppProfile(in: profile) else { return }
+        let action = delta > 0 ? appProfile.rotateRight : appProfile.rotateLeft
+        let magnitude = abs(delta)
+
+        for _ in 0..<magnitude {
+            executeAction(
+                action,
+                rotationDelta: delta > 0 ? 1 : -1,
+                stepSize: stepSize
+            )
+        }
+    }
+
+    func handleSingleTap(profile: PowerMateProfile) {
+        guard let appProfile = activeAppProfile(in: profile) else { return }
+        executeAction(appProfile.singleClick)
+    }
+
+    func handleDoubleTap(profile: PowerMateProfile) {
+        guard let appProfile = activeAppProfile(in: profile) else { return }
+        executeAction(appProfile.doubleClick)
+    }
+
+    /// Device-aware long-press override. Returns true when the assigned
+    /// profile intentionally consumes the global mode-cycle gesture.
+    func handleLongPress(
+        profile: PowerMateProfile,
+        identity: PowerMateHardwareIdentity
+    ) -> Bool {
+        guard let appProfile = activeAppProfile(in: profile) else {
+            return false
+        }
+
+        guard appProfile.overrideLongPress,
+              appProfile.longPressAction.type != .unassigned else {
+            return false
+        }
+
+        let action = appProfile.longPressAction
+
+        if appProfile.holdBehavior == .extendedPress {
+            deviceExtendedPressActions[identity] = action
+            executeExtendedPressStart(action)
+        } else {
+            executeAction(action)
+        }
+
+        return true
+    }
+
+    func handleButtonReleased(
+        profile: PowerMateProfile,
+        identity: PowerMateHardwareIdentity
+    ) {
+        guard let action = deviceExtendedPressActions.removeValue(forKey: identity) else {
+            return
+        }
+
+        executeExtendedPressEnd(action)
+    }
+
+    /// Whether the reusable device profile overrides global mode cycling.
+    func longPressOverridesModeCycle(profile: PowerMateProfile) -> Bool {
+        guard let appProfile = activeAppProfile(in: profile) else {
+            return false
+        }
+
+        return appProfile.overrideLongPress &&
+            appProfile.longPressAction.type != .unassigned
+    }
 
     func handleRotation(delta: Int, stepSize: Float) {
         guard let profile = activeProfile else { return }
@@ -507,6 +606,11 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
+        for (_, action) in deviceExtendedPressActions {
+            executeExtendedPressEnd(action)
+        }
+        deviceExtendedPressActions.removeAll()
+
         oscController.shutdown()
         if extendedPressActive, let action = extendedPressAction {
             executeExtendedPressEnd(action)
