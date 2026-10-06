@@ -483,7 +483,8 @@ class CustomModeEngine: ObservableObject {
         canvasRotateEndWorkItem = work
 
         if !canvasRotateActive {
-            canvasRotatePoint = NSEvent.mouseLocation
+            guard let currentMouseLocation = CGEvent(source: nil)?.location else { return }
+            canvasRotatePoint = currentMouseLocation
 
             postKeyEvent(keyCode: 56, flags: .maskShift, keyDown: true)
             postKeyEvent(keyCode: 49, flags: .maskShift, keyDown: true)
