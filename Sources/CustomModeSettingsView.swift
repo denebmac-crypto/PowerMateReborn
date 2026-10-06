@@ -320,17 +320,28 @@ struct ActionConfigRow: View {
 
                             Slider(
                                 value: Binding(
-                                    get: { Double(config.scrollAmount) },
-                                    set: { config.scrollAmount = Int($0.rounded()) }
+                                    get: {
+                                        Double(max(1, min(20, config.scrollAmount)))
+                                    },
+                                    set: { value in
+                                        config.scrollAmount = max(
+                                            1,
+                                            min(20, Int(value.rounded()))
+                                        )
+                                    }
                                 ),
                                 in: 1...20,
                                 step: 1
                             )
                             .frame(width: 180)
 
-                            Text("\(config.scrollAmount)")
+                            Text("\(max(1, min(20, config.scrollAmount)))")
                                 .monospacedDigit()
                                 .frame(width: 28, alignment: .trailing)
+
+                            Text("lines/step")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                         }
 
                     case .keyboard:
@@ -412,7 +423,7 @@ struct ActionConfigRow: View {
                                 Text(method.displayName).tag(method)
                             }
                         }
-                        .frame(width: 210)
+                        .frame(width: 300)
 
                         HStack(spacing: 10) {
                             Text("Rotation Amount")
@@ -435,9 +446,9 @@ struct ActionConfigRow: View {
                         }
 
                         Text(
-                            config.canvasRotateMethod == .shiftWheel
-                                ? "Shift + mouse wheel"
-                                : "R + drag (temporarily moves and restores the cursor)"
+                            config.canvasRotateMethod == .continuousShiftWheel
+                                ? "Cursor-free continuous scroll gesture"
+                                : "Known-good Shift + mouse wheel fallback"
                         )
                         .foregroundStyle(.secondary)
                         .font(.caption)
