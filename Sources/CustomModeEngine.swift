@@ -521,6 +521,11 @@ class CustomModeEngine: ObservableObject {
             canvasRotateActive = true
         }
 
+        // CSP recognizes this gesture as a real mouse drag. Keep the
+        // event's cursor position moving as well as its delta; posting only
+        // mouseEventDeltaX at a fixed location is ignored by CSP.
+        canvasRotatePoint.x += CGFloat(deltaX)
+
         if let drag = CGEvent(
             mouseEventSource: nil,
             mouseType: .leftMouseDragged,
