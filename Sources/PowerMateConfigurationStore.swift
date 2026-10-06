@@ -19,6 +19,7 @@ final class PowerMateConfigurationStore: ObservableObject {
             )
         {
             configuration = decoded
+            normalizeDeviceProfiles()
         } else {
             configuration = PowerMateConfiguration()
             configuration.profiles = [Self.makeEmptyProfile(name: "Default Profile")]
@@ -69,12 +70,20 @@ final class PowerMateConfigurationStore: ObservableObject {
             return existing
         }
 
-        let profileID = configuration.profiles.first?.id
+        let deviceName = nextDeviceName()
+
+        var deviceProfile = configuration.profiles.first
+            ?? Self.makeEmptyProfile(name: "Default Profile")
+        deviceProfile.id = UUID()
+        deviceProfile.name = deviceName
+
+        configuration.profiles.append(deviceProfile)
+
         let device = PowerMateDevice(
-            name: nextDeviceName(),
+            name: deviceName,
             transportType: identity.transportType,
             hardwareIdentity: identity,
-            assignedProfileID: profileID
+            assignedProfileID: deviceProfile.id
         )
 
         configuration.devices.append(device)
@@ -198,12 +207,129 @@ final class PowerMateConfigurationStore: ObservableObject {
         return configuration.profiles.first { $0.id == id }
     }
 
+    /// Returns the private configuration profile owned by one physical device.
+    /// Each device has its own profile so editing PowerMate A never changes B.
+    func deviceProfile(for deviceID: UUID) -> PowerMateProfile? {
+        guard let device = configuration.devices.first(where: { $0.id == deviceID }) else {
+            return nil
+        }
+        return profile(id: device.assignedProfileID)
+    }
+
+    func updateDeviceProfile(
+        _ profile: PowerMateProfile,
+        for deviceID: UUID
+    ) {
+        guard
+            let device = configuration.devices.first(where: { $0.id == deviceID }),
+            let profileID = device.assignedProfileID,
+            profileID == profile.id
+        else {
+            return
+        }
+        updateProfile(profile)
+    }
+
+    @discardableResult
+    func addApplicationMapping(
+        toDeviceID deviceID: UUID,
+        name: String,
+        bundleIdentifier: String
+    ) -> UUID? {
+        guard var deviceProfile = deviceProfile(for: deviceID) else {
+            return nil
+        }
+
+        if deviceProfile.appProfiles.contains(where: { $0.bundleIdentifier == bundleIdentifier }) {
+            return nil
+        }
+
+        let mapping = CodableAppProfile(
+            name: name,
+            isGlobal: false,
+            bundleIdentifier: bundleIdentifier,
+            iconName: "app"
+        )
+        deviceProfile.appProfiles.append(mapping)
+        updateDeviceProfile(deviceProfile, for: deviceID)
+        return mapping.id
+    }
+
+    func removeApplicationMapping(
+        fromDeviceID deviceID: UUID,
+        mappingID: UUID
+    ) {
+        guard var deviceProfile = deviceProfile(for: deviceID) else {
+            return
+        }
+        deviceProfile.appProfiles.removeAll { $0.id == mappingID && !$0.isGlobal }
+        updateDeviceProfile(deviceProfile, for: deviceID)
+    }
+
     func profile(for identity: PowerMateHardwareIdentity) -> PowerMateProfile? {
         guard let device = device(for: identity) else {
             return nil
         }
 
         return profile(id: device.assignedProfileID)
+    }
+
+    // MARK: - Device Profile Normalization
+
+    /// Older builds allowed multiple devices to point at the same profile.
+    /// Split those shared assignments once so each physical PowerMate has an
+    /// independent application-mapping tree.
+    private func normalizeDeviceProfiles() {
+        var usedProfileIDs = Set<UUID>()
+        var changed = false
+
+        if configuration.profiles.isEmpty {
+            configuration.profiles = [Self.makeEmptyProfile(name: "Default Profile")]
+            changed = true
+        }
+
+        for index in configuration.devices.indices {
+            let device = configuration.devices[index]
+
+            guard let assignedID = device.assignedProfileID else {
+                var newProfile = configuration.profiles[0]
+                newProfile.id = UUID()
+                newProfile.name = device.name
+                configuration.profiles.append(newProfile)
+                configuration.devices[index].assignedProfileID = newProfile.id
+                usedProfileIDs.insert(newProfile.id)
+                changed = true
+                continue
+            }
+
+            guard let source = configuration.profiles.first(where: { $0.id == assignedID }) else {
+                var newProfile = configuration.profiles[0]
+                newProfile.id = UUID()
+                newProfile.name = device.name
+                configuration.profiles.append(newProfile)
+                configuration.devices[index].assignedProfileID = newProfile.id
+                usedProfileIDs.insert(newProfile.id)
+                changed = true
+                continue
+            }
+
+            if usedProfileIDs.contains(assignedID) {
+                var copy = source
+                copy.id = UUID()
+                copy.name = device.name
+                configuration.profiles.append(copy)
+                configuration.devices[index].assignedProfileID = copy.id
+                usedProfileIDs.insert(copy.id)
+                changed = true
+            } else {
+                usedProfileIDs.insert(assignedID)
+            }
+        }
+
+        if changed {
+            persist()
+            NSLog("Config: normalized device profiles to independent mappings")
+        }
     }
 
     // MARK: - Persistence
