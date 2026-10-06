@@ -584,6 +584,58 @@ final class PowerMateConfigurationStore: ObservableObject {
             persist()
             NSLog("Config: normalized reusable Profiles and hardware registry")
         }
+
+        repairUnassignedLegacyProfileAssignments()
+    }
+
+    /// Repairs the migration state produced by the old "device owns Profile"
+    /// implementation. This is intentionally conservative: only an unassigned
+    /// hardware record is matched to a legacy letter-named Profile. Once the
+    /// user makes an explicit assignment, it is never overwritten here.
+    private func repairUnassignedLegacyProfileAssignments() {
+        var changed = false
+
+        for deviceIndex in configuration.devices.indices {
+            guard configuration.devices[deviceIndex].assignedProfileID == nil else {
+                continue
+            }
+
+            guard
+                let number = Self.legacyOrNumericDeviceNumber(
+                    from: configuration.devices[deviceIndex].name
+                ),
+                number >= 1,
+                number <= 26
+            else {
+                continue
+            }
+
+            let scalarValue = Unicode.Scalar("A").value + UInt32(number - 1)
+            guard let scalar = UnicodeScalar(scalarValue) else {
+                continue
+            }
+
+            let legacyName = "PowerMate " + String(scalar)
+
+            guard let profile = configuration.profiles.first(where: {
+                $0.name == legacyName
+            }) else {
+                continue
+            }
+
+            configuration.devices[deviceIndex].assignedProfileID = profile.id
+            changed = true
+
+            NSLog(
+                "Config: repaired %@ -> Profile %@",
+                configuration.devices[deviceIndex].name,
+                profile.name
+            )
+        }
+
+        if changed {
+            persist()
+        }
     }
 
     private func nextAvailableNumber(_ usedNumbers: Set<Int>) -> Int {
