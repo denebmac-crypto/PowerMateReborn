@@ -1,117 +1,246 @@
 import SwiftUI
 import AppKit
 
+/// Main editor for reusable PowerMate Profiles and their hardware assignments.
+///
+/// The left column is the reusable Profile library:
+///   PowerMate A
+///     Default
+///     CLIP STUDIO PAINT
+///
+/// Hardware is intentionally separate. Selecting a Profile shows its hardware
+/// assignment in the detail column; selecting a mapping shows only its Actions.
 struct PowerMateDeviceSettingsView: View {
     @ObservedObject private var store = PowerMateConfigurationStore.shared
 
-    @State private var expandedDeviceIDs: Set<UUID> = []
-    @State private var selection: MappingSelection?
+    @State private var expandedProfileIDs: Set<UUID> = []
+    @State private var selection: SettingsSelection?
+    @State private var showingNewProfile = false
+    @State private var renameRequest: RenameProfileRequest?
+    @State private var pendingDeleteProfileID: UUID?
+    @State private var pendingForgetDeviceID: UUID?
+    @State private var showingForgetConfirmation = false
 
     var body: some View {
         NavigationSplitView {
             List {
-                ForEach(store.configuration.devices) { device in
-                    DisclosureGroup(
-                        isExpanded: expandedBinding(for: device.id)
-                    ) {
-                        let mappings = store.deviceProfile(for: device.id)?.appProfiles ?? []
+                Section("Profiles") {
+                    ForEach(store.configuration.profiles) { profile in
+                        profileTree(profile)
+                    }
+                }
 
-                        ForEach(mappings) { mapping in
+                Section("Hardware") {
+                    if store.configuration.devices.isEmpty {
+                        Text("No registered PowerMates")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(store.configuration.devices) { device in
                             Button {
-                                selection = MappingSelection(
-                                    deviceID: device.id,
-                                    mappingID: mapping.id
-                                )
+                                selection = .device(device.id)
                             } label: {
-                                mappingRow(mapping, selected: selection == MappingSelection(
-                                    deviceID: device.id,
-                                    mappingID: mapping.id
-                                ))
+                                hardwareRow(device)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Forget PowerMate", role: .destructive) {
+                                    pendingForgetDeviceID = device.id
+                                    showingForgetConfirmation = true
+                                }
+                            }
                         }
-                    } label: {
-                        deviceRow(device)
                     }
                 }
             }
             .listStyle(.sidebar)
             .navigationTitle("PowerMates")
-        } detail: {
-            if let selection,
-               let device = store.configuration.devices.first(
-                    where: { $0.id == selection.deviceID }
-               ) {
-                DeviceMappingEditorView(
-                    store: store,
-                    device: device,
-                    mappingID: selection.mappingID,
-                    onSelectMapping: { mappingID in
-                        self.selection = MappingSelection(
-                            deviceID: device.id,
-                            mappingID: mappingID
-                        )
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingNewProfile = true
+                    } label: {
+                        Label("New Profile", systemImage: "plus")
                     }
-                )
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "dial.medium")
-                        .font(.system(size: 32))
-                    Text("Select a PowerMate")
-                        .font(.headline)
-                    Text("Choose Default or an application mapping from the left.")
-                        .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        } detail: {
+            detailView
         }
         .frame(width: 900, height: 620)
-        .onAppear {
-            if let firstDevice = store.configuration.devices.first {
-                expandedDeviceIDs.insert(firstDevice.id)
+        .sheet(isPresented: $showingNewProfile) {
+            ProfileNameSheet(
+                title: "New Profile",
+                initialName: "New Profile"
+            ) { name in
+                let profile = store.createProfile(name: name)
+                expandedProfileIDs.insert(profile.id)
+                selection = .profile(profile.id)
+            }
+        }
+        .sheet(item: $renameRequest) { request in
+            ProfileNameSheet(
+                title: "Rename Profile",
+                initialName: request.currentName
+            ) { name in
+                store.renameProfile(id: request.profileID, name: name)
+                selection = .profile(request.profileID)
+            }
+        }
+        .alert("Forget PowerMate?", isPresented: $showingForgetConfirmation) {
+            Button("Cancel", role: .cancel) {
+                pendingForgetDeviceID = nil
+            }
+            Button("Forget", role: .destructive) {
+                guard let deviceID = pendingForgetDeviceID else { return }
 
-                if let firstMapping = store.deviceProfile(for: firstDevice.id)?.appProfiles.first {
-                    selection = MappingSelection(
-                        deviceID: firstDevice.id,
-                        mappingID: firstMapping.id
+                if selection == .device(deviceID) {
+                    selection = nil
+                }
+
+                store.forgetDevice(id: deviceID)
+                pendingForgetDeviceID = nil
+            }
+        } message: {
+            Text("The hardware registration will be removed. Its assigned Profile and all Profile settings will remain.")
+        }
+        .onAppear {
+            if selection == nil, let firstProfile = store.configuration.profiles.first {
+                expandedProfileIDs.insert(firstProfile.id)
+                selection = .profile(firstProfile.id)
+            }
+        }
+    }
+
+    // MARK: - Tree
+
+    @ViewBuilder
+    private func profileTree(_ profile: PowerMateProfile) -> some View {
+        DisclosureGroup(
+            isExpanded: expandedBinding(for: profile.id)
+        ) {
+            ForEach(profile.appProfiles) { mapping in
+                Button {
+                    selection = .mapping(
+                        profileID: profile.id,
+                        mappingID: mapping.id
                     )
+                } label: {
+                    mappingRow(
+                        mapping,
+                        selected: selection == .mapping(
+                            profileID: profile.id,
+                            mappingID: mapping.id
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    if !mapping.isGlobal {
+                        Button("Remove Mapping", role: .destructive) {
+                            store.removeApplicationMapping(
+                                fromProfileID: profile.id,
+                                mappingID: mapping.id
+                            )
+
+                            if selection == .mapping(
+                                profileID: profile.id,
+                                mappingID: mapping.id
+                            ) {
+                                selection = .profile(profile.id)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Button {
+                selection = .profile(profile.id)
+            } label: {
+                profileRow(profile)
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button("Rename Profile") {
+                    renameRequest = RenameProfileRequest(
+                        profileID: profile.id,
+                        currentName: profile.name
+                    )
+                }
+
+                Button("Duplicate Profile") {
+                    if let copy = store.duplicateProfile(id: profile.id) {
+                        expandedProfileIDs.insert(copy.id)
+                        selection = .profile(copy.id)
+                    }
+                }
+
+                if store.configuration.profiles.count > 1 {
+                    Divider()
+
+                    Button("Delete Profile", role: .destructive) {
+                        pendingDeleteProfileID = profile.id
+                        selection = nil
+                        store.deleteProfile(id: profile.id)
+                        pendingDeleteProfileID = nil
+                    }
                 }
             }
         }
     }
 
-    private func expandedBinding(for deviceID: UUID) -> Binding<Bool> {
+    private func expandedBinding(for profileID: UUID) -> Binding<Bool> {
         Binding(
-            get: { expandedDeviceIDs.contains(deviceID) },
-            set: { isExpanded in
-                if isExpanded {
-                    expandedDeviceIDs.insert(deviceID)
+            get: {
+                expandedProfileIDs.contains(profileID)
+            },
+            set: { expanded in
+                if expanded {
+                    expandedProfileIDs.insert(profileID)
                 } else {
-                    expandedDeviceIDs.remove(deviceID)
+                    expandedProfileIDs.remove(profileID)
                 }
             }
         )
     }
 
-    private func deviceRow(_ device: PowerMateDevice) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(
-                    store.connectedIdentities.contains(device.hardwareIdentity)
-                        ? Color.green
-                        : Color.secondary
-                )
-                .frame(width: 8, height: 8)
+    private func profileRow(_ profile: PowerMateProfile) -> some View {
+        let assignedDevice = store.assignedDevice(for: profile.id)
+
+        return HStack(spacing: 8) {
+            Image(systemName: "dial.medium")
+                .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(device.name)
+                Text(profile.name)
                     .font(.headline)
-                Text(device.transportType.displayName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                if let assignedDevice {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(
+                                store.connectedIdentities.contains(assignedDevice.hardwareIdentity)
+                                    ? Color.green
+                                    : Color.secondary
+                            )
+                            .frame(width: 6, height: 6)
+
+                        Text(assignedDevice.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Not assigned")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
+
+            if selection == .profile(profile.id) {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.tint)
+            }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
@@ -142,213 +271,400 @@ struct PowerMateDeviceSettingsView: View {
         )
         .contentShape(Rectangle())
     }
+
+    private func hardwareRow(_ device: PowerMateDevice) -> some View {
+        let connected = store.connectedIdentities.contains(device.hardwareIdentity)
+        let assignedProfile = store.profile(id: device.assignedProfileID)
+
+        return HStack(spacing: 8) {
+            Circle()
+                .fill(connected ? Color.green : Color.secondary)
+                .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.name)
+                    .font(.headline)
+
+                Text(
+                    assignedProfile?.name ?? "Unassigned"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if selection == .device(device.id) {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.tint)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Detail
+
+    @ViewBuilder
+    private var detailView: some View {
+        switch selection {
+        case .profile(let profileID):
+            if let profile = store.profile(id: profileID) {
+                ProfileDetailView(
+                    store: store,
+                    profile: profile,
+                    onAddApplication: { mappingID in
+                        selection = .mapping(
+                            profileID: profile.id,
+                            mappingID: mappingID
+                        )
+                    }
+                )
+            } else {
+                emptyDetail
+            }
+
+        case .mapping(let profileID, let mappingID):
+            if
+                let profile = store.profile(id: profileID),
+                let mapping = profile.appProfiles.first(where: { $0.id == mappingID })
+            {
+                ProfileMappingEditorView(
+                    store: store,
+                    profile: profile,
+                    mapping: mapping,
+                    onSelectProfile: {
+                        selection = .profile(profile.id)
+                    }
+                )
+            } else {
+                emptyDetail
+            }
+
+        case .device(let deviceID):
+            if let device = store.device(id: deviceID) {
+                HardwareDetailView(
+                    store: store,
+                    device: device
+                )
+            } else {
+                emptyDetail
+            }
+
+        case nil:
+            emptyDetail
+        }
+    }
+
+    private var emptyDetail: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "dial.medium")
+                .font(.system(size: 32))
+
+            Text("Select a Profile or PowerMate")
+                .font(.headline)
+
+            Text("Profiles contain settings; hardware is assigned separately.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }
 
-private struct MappingSelection: Hashable {
-    let deviceID: UUID
-    let mappingID: UUID
+// MARK: - Selection
+
+private enum SettingsSelection: Hashable {
+    case profile(UUID)
+    case mapping(profileID: UUID, mappingID: UUID)
+    case device(UUID)
 }
 
-private struct DeviceMappingEditorView: View {
+private struct RenameProfileRequest: Identifiable {
+    let profileID: UUID
+    let currentName: String
+
+    var id: UUID {
+        profileID
+    }
+}
+
+// MARK: - Profile Detail
+
+private struct ProfileDetailView: View {
     @ObservedObject var store: PowerMateConfigurationStore
-    let device: PowerMateDevice
-    let mappingID: UUID
-    let onSelectMapping: (UUID) -> Void
+    let profile: PowerMateProfile
+    let onAddApplication: (UUID) -> Void
 
-    @State private var deviceName: String
     @State private var showingAddApplication = false
 
-    init(
-        store: PowerMateConfigurationStore,
-        device: PowerMateDevice,
-        mappingID: UUID,
-        onSelectMapping: @escaping (UUID) -> Void
-    ) {
-        self.store = store
-        self.device = device
-        self.mappingID = mappingID
-        self.onSelectMapping = onSelectMapping
-        _deviceName = State(initialValue: device.name)
-    }
-
-    private var profile: PowerMateProfile? {
-        store.deviceProfile(for: device.id)
-    }
-
-    private var mapping: CodableAppProfile? {
-        profile?.appProfiles.first(where: { $0.id == mappingID })
+    private var assignedDevice: PowerMateDevice? {
+        store.assignedDevice(for: profile.id)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let profile, let mapping,
-               let index = profile.appProfiles.firstIndex(where: { $0.id == mapping.id }) {
-                Form {
-                    Section("PowerMate") {
-                        TextField("Name", text: $deviceName)
-                            .onSubmit {
-                                store.renameDevice(id: device.id, name: deviceName)
-                            }
+        Form {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: "dial.medium")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.tint)
 
-                        LabeledContent("Transport", value: device.transportType.displayName)
-                        LabeledContent("Hardware ID", value: device.hardwareIdentity.identifier)
-                        LabeledContent(
-                            "Status",
-                            value: store.connectedIdentities.contains(device.hardwareIdentity)
-                                ? "Connected"
-                                : "Not Connected"
-                        )
-                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(profile.name)
+                            .font(.title2)
+                            .bold()
 
-                    Section {
-                        HStack {
-                            Text(mapping.isGlobal ? "Default" : mapping.name)
-                                .font(.title3)
-                                .bold()
-
-                            Spacer()
-
-                            if !mapping.isGlobal {
-                                Button("Remove Mapping", role: .destructive) {
-                                    store.removeApplicationMapping(
-                                        fromDeviceID: device.id,
-                                        mappingID: mapping.id
-                                    )
-                                }
-                            }
-                        }
-
-                        if !mapping.isGlobal, let bundleID = mapping.bundleIdentifier {
-                            LabeledContent("Application", value: bundleID)
-                        }
-
-                        Text(
-                            mapping.isGlobal
-                                ? "Used whenever the frontmost application has no mapping on this PowerMate."
-                                : "Used only when this application is frontmost. Other applications fall back to Default."
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-
-                    Section("Actions") {
-                        ActionConfigRow(
-                            title: "Rotate Left",
-                            icon: "arrow.counterclockwise",
-                            config: actionBinding(
-                                profile: profile,
-                                index: index,
-                                keyPath: \.rotateLeft
-                            )
-                        )
-
-                        ActionConfigRow(
-                            title: "Rotate Right",
-                            icon: "arrow.clockwise",
-                            config: actionBinding(
-                                profile: profile,
-                                index: index,
-                                keyPath: \.rotateRight
-                            )
-                        )
-
-                        Divider().padding(.vertical, 4)
-
-                        ActionConfigRow(
-                            title: "Single Tap",
-                            icon: "hand.tap",
-                            config: actionBinding(
-                                profile: profile,
-                                index: index,
-                                keyPath: \.singleClick
-                            )
-                        )
-
-                        ActionConfigRow(
-                            title: "Double Tap",
-                            icon: "hand.tap.fill",
-                            config: actionBinding(
-                                profile: profile,
-                                index: index,
-                                keyPath: \.doubleClick
-                            )
-                        )
-
-                        Divider().padding(.vertical, 4)
-
-                        Toggle(
-                            "Override Global Mode Cycling",
-                            isOn: appProfileBinding(
-                                profile: profile,
-                                index: index,
-                                keyPath: \.overrideLongPress
-                            )
-                        )
-
-                        if mapping.overrideLongPress {
-                            Picker(
-                                "Hold Behavior",
-                                selection: appProfileBinding(
-                                    profile: profile,
-                                    index: index,
-                                    keyPath: \.holdBehavior
-                                )
-                            ) {
-                                ForEach(CodableHoldBehavior.allCases) { behavior in
-                                    Text(behavior.displayName).tag(behavior)
-                                }
-                            }
-
-                            ActionConfigRow(
-                                title: mapping.holdBehavior == .longPress
-                                    ? "Long Press"
-                                    : "Extended Press",
-                                icon: "hand.draw",
-                                config: actionBinding(
-                                    profile: profile,
-                                    index: index,
-                                    keyPath: \.longPressAction
-                                )
-                            )
-                        }
+                        Text("Reusable PowerMate Profile")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .formStyle(.grouped)
-            } else {
-                Text("Mapping not found")
+                .padding(.bottom, 6)
+            }
+
+            Section("Hardware Assignment") {
+                Picker(
+                    "Select PowerMate",
+                    selection: Binding<UUID?>(
+                        get: {
+                            assignedDevice?.id
+                        },
+                        set: { deviceID in
+                            store.assignDevice(
+                                deviceID,
+                                toProfileID: profile.id
+                            )
+                        }
+                    )
+                ) {
+                    Text("Not Assigned")
+                        .tag(nil as UUID?)
+
+                    ForEach(store.configuration.devices) { device in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(
+                                    store.connectedIdentities.contains(device.hardwareIdentity)
+                                        ? Color.green
+                                        : Color.secondary
+                                )
+                                .frame(width: 7, height: 7)
+
+                            Text(device.name)
+                        }
+                        .tag(device.id as UUID?)
+                    }
+                }
+
+                if let assignedDevice {
+                    LabeledContent(
+                        "Status",
+                        value: store.connectedIdentities.contains(assignedDevice.hardwareIdentity)
+                            ? "Connected"
+                            : "Disconnected"
+                    )
+
+                    LabeledContent(
+                        "Transport",
+                        value: assignedDevice.transportType.displayName
+                    )
+
+                    LabeledContent(
+                        "Hardware ID",
+                        value: assignedDevice.hardwareIdentity.identifier
+                    )
+                } else {
+                    LabeledContent("Status", value: "Not Assigned")
+                }
+            }
+
+            Section {
+                HStack {
+                    Text("Applications")
+                        .font(.headline)
+
+                    Spacer()
+
+                    Button {
+                        showingAddApplication = true
+                    } label: {
+                        Label("Add Application", systemImage: "plus")
+                    }
+                }
+
+                Text("Choose an application below to edit its Actions. Unmapped applications use Default.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            HStack {
-                Spacer()
-
-                Button {
-                    showingAddApplication = true
-                } label: {
-                    Label("Add Application", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            .padding(16)
         }
-        .navigationTitle(device.name)
+        .formStyle(.grouped)
         .sheet(isPresented: $showingAddApplication) {
-            AddApplicationToDeviceSheet(
+            AddApplicationToProfileSheet(
                 store: store,
-                deviceID: device.id,
-                onAdded: { id in
-                    onSelectMapping(id)
+                profileID: profile.id,
+                onAdded: { mappingID in
+                    showingAddApplication = false
+                    onAddApplication(mappingID)
                 }
             )
         }
-        .onDisappear {
-            store.renameDevice(id: device.id, name: deviceName)
+        .padding()
+        .navigationTitle(profile.name)
+    }
+}
+
+// MARK: - Application Mapping Detail
+
+private struct ProfileMappingEditorView: View {
+    @ObservedObject var store: PowerMateConfigurationStore
+    let profile: PowerMateProfile
+    let mapping: CodableAppProfile
+    let onSelectProfile: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    mappingIcon
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(mapping.isGlobal ? "Default" : mapping.name)
+                            .font(.title2)
+                            .bold()
+
+                        if !mapping.isGlobal, let bundleID = mapping.bundleIdentifier {
+                            Text(bundleID)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    Button("Profile: \(profile.name)") {
+                        onSelectProfile()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.bottom, 20)
+
+                Text("Actions")
+                    .font(.headline)
+                    .padding(.bottom, 8)
+
+                if
+                    let currentProfile = store.profile(id: profile.id),
+                    let index = currentProfile.appProfiles.firstIndex(where: { $0.id == mapping.id })
+                {
+                    ActionConfigRow(
+                        title: "Rotate Left",
+                        icon: "arrow.counterclockwise",
+                        config: actionBinding(
+                            currentProfile,
+                            index: index,
+                            keyPath: \.rotateLeft
+                        )
+                    )
+
+                    ActionConfigRow(
+                        title: "Rotate Right",
+                        icon: "arrow.clockwise",
+                        config: actionBinding(
+                            currentProfile,
+                            index: index,
+                            keyPath: \.rotateRight
+                        )
+                    )
+
+                    Divider().padding(.vertical, 12)
+
+                    ActionConfigRow(
+                        title: "Single Tap",
+                        icon: "hand.tap",
+                        config: actionBinding(
+                            currentProfile,
+                            index: index,
+                            keyPath: \.singleClick
+                        )
+                    )
+
+                    ActionConfigRow(
+                        title: "Double Tap",
+                        icon: "hand.tap.fill",
+                        config: actionBinding(
+                            currentProfile,
+                            index: index,
+                            keyPath: \.doubleClick
+                        )
+                    )
+
+                    Divider().padding(.vertical, 12)
+
+                    Toggle(
+                        "Override Global Mode Cycling",
+                        isOn: actionBinding(
+                            currentProfile,
+                            index: index,
+                            keyPath: \.overrideLongPress
+                        )
+                    )
+
+                    if currentProfile.appProfiles[index].overrideLongPress {
+                        Picker(
+                            "Hold Behavior",
+                            selection: actionBinding(
+                                currentProfile,
+                                index: index,
+                                keyPath: \.holdBehavior
+                            )
+                        ) {
+                            ForEach(CodableHoldBehavior.allCases) { behavior in
+                                Text(behavior.displayName).tag(behavior)
+                            }
+                        }
+
+                        ActionConfigRow(
+                            title: currentProfile.appProfiles[index].holdBehavior == .longPress
+                                ? "Long Press"
+                                : "Extended Press",
+                            icon: "hand.draw",
+                            config: actionBinding(
+                                currentProfile,
+                                index: index,
+                                keyPath: \.longPressAction
+                            )
+                        )
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .navigationTitle(mapping.isGlobal ? "Default" : mapping.name)
+    }
+
+    @ViewBuilder
+    private var mappingIcon: some View {
+        if
+            !mapping.isGlobal,
+            let bundleID = mapping.bundleIdentifier,
+            let app = NSWorkspace.shared.runningApplications.first(where: {
+                $0.bundleIdentifier == bundleID
+            }),
+            let icon = app.icon
+        {
+            Image(nsImage: icon)
+                .resizable()
+                .frame(width: 40, height: 40)
+        } else {
+            Image(systemName: mapping.isGlobal ? "globe" : "app")
+                .font(.system(size: 34))
+                .foregroundStyle(mapping.isGlobal ? .tint : .primary)
+                .frame(width: 40, height: 40)
         }
     }
 
-    private func appProfileBinding<T>(
-        profile: PowerMateProfile,
+    private func actionBinding<T>(
+        _ profile: PowerMateProfile,
         index: Int,
         keyPath: WritableKeyPath<CodableAppProfile, T>
     ) -> Binding<T> {
@@ -359,27 +675,111 @@ private struct DeviceMappingEditorView: View {
             set: { value in
                 var updated = profile
                 updated.appProfiles[index][keyPath: keyPath] = value
-                store.updateDeviceProfile(updated, for: device.id)
+                store.updateProfile(updated)
             }
-        )
-    }
-
-    private func actionBinding(
-        profile: PowerMateProfile,
-        index: Int,
-        keyPath: WritableKeyPath<CodableAppProfile, CodableActionConfig>
-    ) -> Binding<CodableActionConfig> {
-        appProfileBinding(
-            profile: profile,
-            index: index,
-            keyPath: keyPath
         )
     }
 }
 
-private struct AddApplicationToDeviceSheet: View {
+// MARK: - Hardware Detail
+
+private struct HardwareDetailView: View {
     @ObservedObject var store: PowerMateConfigurationStore
-    let deviceID: UUID
+    let device: PowerMateDevice
+
+    @State private var showingForgetConfirmation = false
+
+    private var connected: Bool {
+        store.connectedIdentities.contains(device.hardwareIdentity)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(connected ? Color.green : Color.secondary)
+                        .frame(width: 10, height: 10)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(device.name)
+                            .font(.title2)
+                            .bold()
+
+                        Text(connected ? "Connected" : "Disconnected")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Section("Hardware") {
+                LabeledContent(
+                    "Status",
+                    value: connected ? "Connected" : "Disconnected"
+                )
+
+                LabeledContent(
+                    "Transport",
+                    value: device.transportType.displayName
+                )
+
+                LabeledContent(
+                    "Hardware ID",
+                    value: device.hardwareIdentity.identifier
+                )
+            }
+
+            Section("Profile Assignment") {
+                Picker(
+                    "Profile",
+                    selection: Binding<UUID?>(
+                        get: {
+                            device.assignedProfileID
+                        },
+                        set: { profileID in
+                            store.assignProfile(
+                                profileID,
+                                toDeviceID: device.id
+                            )
+                        }
+                    )
+                ) {
+                    Text("Unassigned")
+                        .tag(nil as UUID?)
+
+                    ForEach(store.configuration.profiles) { profile in
+                        Text(profile.name)
+                            .tag(profile.id as UUID?)
+                    }
+                }
+            }
+
+            Section {
+                Button("Forget PowerMate", role: .destructive) {
+                    showingForgetConfirmation = true
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .navigationTitle(device.name)
+        .alert("Forget PowerMate?", isPresented: $showingForgetConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Forget", role: .destructive) {
+                store.forgetDevice(id: device.id)
+            }
+        } message: {
+            Text("The hardware registration will be removed. Its assigned Profile will remain.")
+        }
+    }
+}
+
+// MARK: - Add Application
+
+private struct AddApplicationToProfileSheet: View {
+    @ObservedObject var store: PowerMateConfigurationStore
+    let profileID: UUID
     let onAdded: (UUID) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -392,7 +792,7 @@ private struct AddApplicationToDeviceSheet: View {
             Text("Add Application Mapping")
                 .font(.headline)
 
-            Text("Choose a running application to add to this PowerMate.")
+            Text("Choose a running application to add to this Profile.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -430,7 +830,7 @@ private struct AddApplicationToDeviceSheet: View {
                     guard
                         let app = apps.first(where: { $0.bundleID == selectedBundleID }),
                         let mappingID = store.addApplicationMapping(
-                            toDeviceID: deviceID,
+                            toProfileID: profileID,
                             name: app.name,
                             bundleIdentifier: app.bundleID
                         )
@@ -449,7 +849,7 @@ private struct AddApplicationToDeviceSheet: View {
         .frame(width: 460)
         .onAppear {
             let existing = Set(
-                (store.deviceProfile(for: deviceID)?.appProfiles ?? [])
+                (store.profile(id: profileID)?.appProfiles ?? [])
                     .compactMap { $0.bundleIdentifier }
             )
 
@@ -473,5 +873,60 @@ private struct AddApplicationToDeviceSheet: View {
                     $0.0.localizedCaseInsensitiveCompare($1.0) == .orderedAscending
                 }
         }
+    }
+}
+
+// MARK: - Profile Name Sheet
+
+private struct ProfileNameSheet: View {
+    let title: String
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+
+    init(
+        title: String,
+        initialName: String,
+        onSave: @escaping (String) -> Void
+    ) {
+        self.title = title
+        self.onSave = onSave
+        _name = State(initialValue: initialName)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(title)
+                .font(.headline)
+
+            TextField("Profile name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Save") {
+                    save()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+    }
+
+    private func save() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onSave(trimmed)
+        dismiss()
     }
 }
