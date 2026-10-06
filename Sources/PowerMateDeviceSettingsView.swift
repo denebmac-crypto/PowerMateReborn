@@ -331,8 +331,8 @@ struct PowerMateDeviceSettingsView: View {
             {
                 ProfileMappingEditorView(
                     store: store,
-                    profile: profile,
-                    mapping: mapping,
+                    profileID: profile.id,
+                    mappingID: mapping.id,
                     onSelectProfile: {
                         selection = .profile(profile.id)
                     }
@@ -517,133 +517,131 @@ private struct ReusableProfileDetailView: View {
 
 private struct ProfileMappingEditorView: View {
     @ObservedObject var store: PowerMateConfigurationStore
-    let profile: PowerMateProfile
-    let mapping: CodableAppProfile
+    let profileID: UUID
+    let mappingID: UUID
     let onSelectProfile: () -> Void
 
+    private var profile: PowerMateProfile? {
+        store.profile(id: profileID)
+    }
+
+    private var mapping: CodableAppProfile? {
+        profile?.appProfiles.first(where: { $0.id == mappingID })
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
-                    mappingIcon
+        Group {
+            if let profile, let mapping {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 12) {
+                            mappingIcon(mapping)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(mapping.isGlobal ? "Default" : mapping.name)
-                            .font(.title2)
-                            .bold()
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(mapping.isGlobal ? "Default" : mapping.name)
+                                    .font(.title2)
+                                    .bold()
 
-                        if !mapping.isGlobal, let bundleID = mapping.bundleIdentifier {
-                            Text(bundleID)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Spacer()
-
-                    Button("Profile: \(profile.name)") {
-                        onSelectProfile()
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.bottom, 20)
-
-                Text("Actions")
-                    .font(.headline)
-                    .padding(.bottom, 8)
-
-                if
-                    let currentProfile = store.profile(id: profile.id),
-                    let index = currentProfile.appProfiles.firstIndex(where: { $0.id == mapping.id })
-                {
-                    ActionConfigRow(
-                        title: "Rotate Left",
-                        icon: "arrow.counterclockwise",
-                        config: actionBinding(
-                            currentProfile,
-                            index: index,
-                            keyPath: \.rotateLeft
-                        )
-                    )
-
-                    ActionConfigRow(
-                        title: "Rotate Right",
-                        icon: "arrow.clockwise",
-                        config: actionBinding(
-                            currentProfile,
-                            index: index,
-                            keyPath: \.rotateRight
-                        )
-                    )
-
-                    Divider().padding(.vertical, 12)
-
-                    ActionConfigRow(
-                        title: "Single Tap",
-                        icon: "hand.tap",
-                        config: actionBinding(
-                            currentProfile,
-                            index: index,
-                            keyPath: \.singleClick
-                        )
-                    )
-
-                    ActionConfigRow(
-                        title: "Double Tap",
-                        icon: "hand.tap.fill",
-                        config: actionBinding(
-                            currentProfile,
-                            index: index,
-                            keyPath: \.doubleClick
-                        )
-                    )
-
-                    Divider().padding(.vertical, 12)
-
-                    Toggle(
-                        "Override Global Mode Cycling",
-                        isOn: actionBinding(
-                            currentProfile,
-                            index: index,
-                            keyPath: \.overrideLongPress
-                        )
-                    )
-
-                    if currentProfile.appProfiles[index].overrideLongPress {
-                        Picker(
-                            "Hold Behavior",
-                            selection: actionBinding(
-                                currentProfile,
-                                index: index,
-                                keyPath: \.holdBehavior
-                            )
-                        ) {
-                            ForEach(CodableHoldBehavior.allCases) { behavior in
-                                Text(behavior.displayName).tag(behavior)
+                                if !mapping.isGlobal,
+                                   let bundleID = mapping.bundleIdentifier {
+                                    Text(bundleID)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
+
+                            Spacer()
+
+                            Button("Profile: \(profile.name)") {
+                                onSelectProfile()
+                            }
+                            .buttonStyle(.bordered)
                         }
+                        .padding(.bottom, 20)
+
+                        Text("Actions")
+                            .font(.headline)
+                            .padding(.bottom, 8)
 
                         ActionConfigRow(
-                            title: currentProfile.appProfiles[index].holdBehavior == .longPress
-                                ? "Long Press"
-                                : "Extended Press",
-                            icon: "hand.draw",
+                            title: "Rotate Left",
+                            icon: "arrow.counterclockwise",
                             config: actionBinding(
-                                currentProfile,
-                                index: index,
-                                keyPath: \.longPressAction
+                                keyPath: \.rotateLeft
                             )
                         )
+
+                        ActionConfigRow(
+                            title: "Rotate Right",
+                            icon: "arrow.clockwise",
+                            config: actionBinding(
+                                keyPath: \.rotateRight
+                            )
+                        )
+
+                        Divider().padding(.vertical, 12)
+
+                        ActionConfigRow(
+                            title: "Single Tap",
+                            icon: "hand.tap",
+                            config: actionBinding(
+                                keyPath: \.singleClick
+                            )
+                        )
+
+                        ActionConfigRow(
+                            title: "Double Tap",
+                            icon: "hand.tap.fill",
+                            config: actionBinding(
+                                keyPath: \.doubleClick
+                            )
+                        )
+
+                        Divider().padding(.vertical, 12)
+
+                        Toggle(
+                            "Override Global Mode Cycling",
+                            isOn: actionBinding(
+                                keyPath: \.overrideLongPress
+                            )
+                        )
+
+                        if mapping.overrideLongPress {
+                            Picker(
+                                "Hold Behavior",
+                                selection: actionBinding(
+                                    keyPath: \.holdBehavior
+                                )
+                            ) {
+                                ForEach(CodableHoldBehavior.allCases) { behavior in
+                                    Text(behavior.displayName).tag(behavior)
+                                }
+                            }
+
+                            ActionConfigRow(
+                                title: mapping.holdBehavior == .longPress
+                                    ? "Long Press"
+                                    : "Extended Press",
+                                icon: "hand.draw",
+                                config: actionBinding(
+                                    keyPath: \.longPressAction
+                                )
+                            )
+                        }
                     }
+                    .padding(24)
                 }
+            } else {
+                Text("Mapping not found")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(24)
         }
-        .navigationTitle(mapping.isGlobal ? "Default" : mapping.name)
+        .navigationTitle(mapping?.isGlobal == true ? "Default" : (mapping?.name ?? "Mapping"))
     }
 
     @ViewBuilder
-    private var mappingIcon: some View {
+    private func mappingIcon(_ mapping: CodableAppProfile) -> some View {
         if
             !mapping.isGlobal,
             let bundleID = mapping.bundleIdentifier,
@@ -658,26 +656,70 @@ private struct ProfileMappingEditorView: View {
         } else {
             Image(systemName: mapping.isGlobal ? "globe" : "app")
                 .font(.system(size: 34))
-                .foregroundStyle(mapping.isGlobal ? Color.accentColor : Color.primary)
+                .foregroundStyle(
+                    mapping.isGlobal
+                        ? Color.accentColor
+                        : Color.primary
+                )
                 .frame(width: 40, height: 40)
         }
     }
 
     private func actionBinding<T>(
-        _ profile: PowerMateProfile,
-        index: Int,
         keyPath: WritableKeyPath<CodableAppProfile, T>
     ) -> Binding<T> {
         Binding(
             get: {
-                profile.appProfiles[index][keyPath: keyPath]
+                guard
+                    let currentProfile = store.profile(id: profileID),
+                    let currentMapping = currentProfile.appProfiles.first(where: {
+                        $0.id == mappingID
+                    })
+                else {
+                    return defaultValue(for: keyPath)
+                }
+
+                return currentMapping[keyPath: keyPath]
             },
             set: { value in
-                var updated = profile
-                updated.appProfiles[index][keyPath: keyPath] = value
-                store.updateProfile(updated)
+                guard
+                    var currentProfile = store.profile(id: profileID),
+                    let index = currentProfile.appProfiles.firstIndex(where: {
+                        $0.id == mappingID
+                    })
+                else {
+                    return
+                }
+
+                currentProfile.appProfiles[index][keyPath: keyPath] = value
+                store.updateProfile(currentProfile)
+
+                let liveMapping = currentProfile.appProfiles[index]
+                NSLog(
+                    "Config UI: profile=%@ mapping=%@ key updated",
+                    currentProfile.name,
+                    liveMapping.name
+                )
             }
         )
+    }
+
+    private func defaultValue<T>(
+        for keyPath: WritableKeyPath<CodableAppProfile, T>
+    ) -> T {
+        if T.self == Bool.self {
+            return false as! T
+        }
+
+        if T.self == CodableHoldBehavior.self {
+            return CodableHoldBehavior.longPress as! T
+        }
+
+        if T.self == CodableActionConfig.self {
+            return CodableActionConfig() as! T
+        }
+
+        fatalError("No default value for requested Profile mapping binding type")
     }
 }
 
