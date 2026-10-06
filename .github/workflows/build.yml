@@ -72,19 +72,22 @@ jobs:
           if [ -n "$SPARKLE_FRAMEWORK" ]; then
             cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
 
-            SPARKLE_DEP="$(otool -L "$APP/Contents/MacOS/PowerMateDriver" | grep 'Sparkle.framework' | head -n 1 | awk '{print $1}')"
-            if [ -n "$SPARKLE_DEP" ]; then
-              SPARKLE_VERSION="$(echo "$SPARKLE_DEP" | sed -n 's#.*Sparkle.framework/Versions/\\([^/]*\\)/Sparkle#\\1#p')"
-              if [ -n "$SPARKLE_VERSION" ]; then
-                install_name_tool -change                   "$SPARKLE_DEP"                   "@executable_path/../Frameworks/Sparkle.framework/Versions/$SPARKLE_VERSION/Sparkle"                   "$APP/Contents/MacOS/PowerMateDriver"
-              else
-                echo "Could not determine Sparkle framework version from: $SPARKLE_DEP"
-                exit 1
-              fi
-            else
-              echo "Sparkle framework dependency not found"
+            SPARKLE_BINARY="$APP/Contents/Frameworks/Sparkle.framework/Versions/Current/Sparkle"
+            if [ ! -f "$SPARKLE_BINARY" ]; then
+              SPARKLE_BINARY="$(find "$APP/Contents/Frameworks/Sparkle.framework/Versions" -type f -name Sparkle -path '*/Sparkle' -print -quit)"
+            fi
+
+            if [ -z "$SPARKLE_BINARY" ] || [ ! -f "$SPARKLE_BINARY" ]; then
+              echo "Sparkle binary not found inside bundled framework"
               exit 1
             fi
+
+            SPARKLE_VERSION_DIR="$(dirname "$SPARKLE_BINARY")"
+            SPARKLE_VERSION="$(basename "$SPARKLE_VERSION_DIR")"
+            install_name_tool -change               "$(otool -L "$APP/Contents/MacOS/PowerMateDriver" | grep 'Sparkle.framework' | head -n 1 | awk '{print $1}')"               "@executable_path/../Frameworks/Sparkle.framework/Versions/$SPARKLE_VERSION/Sparkle"               "$APP/Contents/MacOS/PowerMateDriver"
+          else
+            echo "Sparkle framework not found in SwiftPM build output"
+            exit 1
           fi
 
           codesign --force --deep --sign - "$APP"
