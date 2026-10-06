@@ -623,7 +623,7 @@ final class PowerMateConfigurationStore: ObservableObject {
             }
 
             let scalarValue = Unicode.Scalar("A").value + UInt32(number - 1)
-            let scalar = UnicodeScalar(scalarValue)
+            let scalar = UnicodeScalar(scalarValue)!
 
             let legacyName = "PowerMate " + String(scalar)
 
