@@ -61,11 +61,15 @@ struct PowerMateDeviceSettingsView: View {
                     device: device
                 )
             } else {
-                ContentUnavailableView(
-                    "No PowerMate Selected",
-                    systemImage: "dial.medium",
-                    description: Text("Connect a PowerMate or select a device.")
-                )
+                VStack(spacing: 10) {
+                    Image(systemName: "dial.medium")
+                        .font(.system(size: 32))
+                    Text("No PowerMate Selected")
+                        .font(.headline)
+                    Text("Connect a PowerMate or select a device.")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -100,11 +104,15 @@ struct PowerMateDeviceSettingsView: View {
                     profile: profile
                 )
             } else {
-                ContentUnavailableView(
-                    "No Profile Selected",
-                    systemImage: "square.stack.3d.up",
-                    description: Text("Create a reusable Profile.")
-                )
+                VStack(spacing: 10) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 32))
+                    Text("No Profile Selected")
+                        .font(.headline)
+                    Text("Create a reusable Profile.")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
@@ -225,11 +233,15 @@ private struct ReusableProfileEditorView: View {
             Divider()
 
             if profile.appProfiles.isEmpty {
-                ContentUnavailableView(
-                    "No Application Mappings",
-                    systemImage: "rectangle.slash",
-                    description: Text("Add a Global Default or an application-specific mapping.")
-                )
+                VStack(spacing: 10) {
+                    Image(systemName: "rectangle.slash")
+                        .font(.system(size: 32))
+                    Text("No Application Mappings")
+                        .font(.headline)
+                    Text("Add a Global Default or an application-specific mapping.")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Picker("Application Mapping", selection: $selectedAppProfileID) {
                     ForEach(profile.appProfiles) { appProfile in
