@@ -49,8 +49,8 @@ enum ScrollDirection: String, Codable, CaseIterable {
 }
 
 enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
-    /// Cursor-free continuous input using public Quartz scroll events.
-    case continuousShiftWheel
+    /// CSP's native left/right canvas-rotation commands. No cursor movement.
+    case cspShortcut
     /// Preserved known-good fallback.
     case shiftWheel
 
@@ -58,8 +58,8 @@ enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .continuousShiftWheel:
-            return "Trackpad-like (Continuous Shift + Scroll)"
+        case .cspShortcut:
+            return "CSP Rotation Shortcut (No Cursor)"
         case .shiftWheel:
             return "Shift + Mouse Wheel (Fallback)"
         }
@@ -68,16 +68,14 @@ enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
     init(from decoder: Decoder) throws {
         let rawValue = try decoder.singleValueContainer().decode(String.self)
         switch rawValue {
-        case "continuousShiftWheel":
-            self = .continuousShiftWheel
+        case "cspShortcut":
+            self = .cspShortcut
         case "shiftWheel":
             self = .shiftWheel
-        case "rDrag":
-            // Retire the cursor-moving experiment without breaking profiles
-            // saved while it was available.
-            self = .continuousShiftWheel
+        case "continuousShiftWheel", "rDrag":
+            self = .cspShortcut
         default:
-            self = .continuousShiftWheel
+            self = .cspShortcut
         }
     }
 }
@@ -125,8 +123,8 @@ struct CodableActionConfig: Codable, Equatable {
     // Tunable amounts are persisted per Action so every Profile/App mapping
     // can have its own sensitivity without changing global device settings.
     var scrollAmount: Int = 3
-    var canvasRotateMethod: CanvasRotateMethod = .continuousShiftWheel
-    var canvasRotateAmount: Int = 4
+    var canvasRotateMethod: CanvasRotateMethod = .cspShortcut
+    var canvasRotateAmount: Int = 1
 
     init(
         type: CodableActionType = .unassigned,
@@ -176,8 +174,8 @@ struct CodableActionConfig: Codable, Equatable {
         midiNote = try container.decodeIfPresent(MIDINoteConfig.self, forKey: .midiNote) ?? MIDINoteConfig()
         osc = try container.decodeIfPresent(OSCConfig.self, forKey: .osc) ?? OSCConfig()
         scrollAmount = try container.decodeIfPresent(Int.self, forKey: .scrollAmount) ?? 3
-        canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .continuousShiftWheel
-        canvasRotateAmount = try container.decodeIfPresent(Int.self, forKey: .canvasRotateAmount) ?? 4
+        canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .cspShortcut
+        canvasRotateAmount = try container.decodeIfPresent(Int.self, forKey: .canvasRotateAmount) ?? 1
     }
 }
 
@@ -613,138 +611,56 @@ class CustomModeEngine: ObservableObject {
         rotationDelta: Int,
         amount: Int
     ) {
-        let pixels = max(1, min(20, amount))
-        let signedPixels = Int32(pixels * rotationDelta)
-
         switch method {
-        case .continuousShiftWheel:
-            executeCanvasRotateContinuousShiftWheel(delta: signedPixels)
+        case .cspShortcut:
+            executeCanvasRotateCSPShortcut(
+                direction: rotationDelta,
+                repeats: max(1, min(20, amount))
+            )
 
         case .shiftWheel:
-            executeCanvasRotateShiftWheel(delta: signedPixels)
+            let pixels = max(1, min(20, amount))
+            executeCanvasRotateShiftWheel(
+                delta: Int32(pixels * rotationDelta)
+            )
         }
     }
 
-    /// Cursor-free canvas rotation path.
+    /// CSP's built-in Rotate Left / Rotate Right commands.
     ///
-    /// AppKit exposes NSEvent.rotate, but Quartz has no public CGEvent rotate
-    /// type that a standalone application can post cross-process. CSP does
-    /// support Shift + mouse-wheel rotation, so use pixel-based continuous
-    /// scroll events and hold Shift across the whole PowerMate gesture.
-    private func executeCanvasRotateContinuousShiftWheel(delta: Int32) {
-        guard delta != 0 else { return }
+    /// CSP's documented macOS defaults are "-" for Rotate Left and "^" for
+    /// Rotate Right. Sending these commands directly is cursor-free and uses
+    /// the same command path as CSP's menu shortcuts.
+    private func executeCanvasRotateCSPShortcut(
+        direction: Int,
+        repeats: Int
+    ) {
+        let keyCode: CGKeyCode = direction > 0 ? 22 : 27
+        let modifiers: CGEventFlags = direction > 0 ? .maskShift : []
 
-        continuousCanvasRotateEndWorkItem?.cancel()
-
-        let source = CGEventSource(stateID: .hidSystemState)
-        let phase: CGScrollPhase = continuousCanvasRotateActive ? .changed : .began
-
-        if !continuousCanvasRotateActive {
-            guard let shiftDown = CGEvent(
-                keyboardEventSource: source,
-                virtualKey: 56,
+        for _ in 0..<repeats {
+            if let keyDown = CGEvent(
+                keyboardEventSource: nil,
+                virtualKey: keyCode,
                 keyDown: true
-            ) else {
-                return
+            ) {
+                keyDown.flags = modifiers
+                keyDown.post(tap: .cgSessionEventTap)
             }
 
-            shiftDown.flags = .maskShift
-            shiftDown.post(tap: .cgSessionEventTap)
-            continuousCanvasRotateActive = true
+            if let keyUp = CGEvent(
+                keyboardEventSource: nil,
+                virtualKey: keyCode,
+                keyDown: false
+            ) {
+                keyUp.flags = modifiers
+                keyUp.post(tap: .cgSessionEventTap)
+            }
         }
-
-        guard let wheel = CGEvent(
-            scrollWheelEvent2Source: source,
-            units: .pixel,
-            wheelCount: 1,
-            wheel1: delta,
-            wheel2: 0,
-            wheel3: 0
-        ) else {
-            endCanvasRotateContinuousShiftWheel()
-            return
-        }
-
-        wheel.flags = .maskShift
-        wheel.setIntegerValueField(
-            .scrollWheelEventIsContinuous,
-            value: 1
-        )
-        wheel.setDoubleValueField(
-            .scrollWheelEventFixedPtDeltaAxis1,
-            value: Double(delta)
-        )
-        wheel.setIntegerValueField(
-            .scrollWheelEventScrollPhase,
-            value: Int64(phase.rawValue)
-        )
-        wheel.setIntegerValueField(
-            .scrollWheelEventMomentumPhase,
-            value: 0
-        )
-        wheel.post(tap: .cgSessionEventTap)
-
-        let endWorkItem = DispatchWorkItem { [weak self] in
-            self?.endCanvasRotateContinuousShiftWheel()
-        }
-        continuousCanvasRotateEndWorkItem = endWorkItem
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + continuousCanvasRotateIdleTimeout,
-            execute: endWorkItem
-        )
     }
 
-    /// End the cursor-free gesture after PowerMate rotation becomes idle.
-    private func endCanvasRotateContinuousShiftWheel() {
-        continuousCanvasRotateEndWorkItem?.cancel()
-        continuousCanvasRotateEndWorkItem = nil
-
-        guard continuousCanvasRotateActive else { return }
-
-        let source = CGEventSource(stateID: .hidSystemState)
-
-        if let wheelEnd = CGEvent(
-            scrollWheelEvent2Source: source,
-            units: .pixel,
-            wheelCount: 1,
-            wheel1: 0,
-            wheel2: 0,
-            wheel3: 0
-        ) {
-            wheelEnd.flags = .maskShift
-            wheelEnd.setIntegerValueField(
-                .scrollWheelEventIsContinuous,
-                value: 1
-            )
-            wheelEnd.setIntegerValueField(
-                .scrollWheelEventScrollPhase,
-                value: Int64(CGScrollPhase.ended.rawValue)
-            )
-            wheelEnd.setIntegerValueField(
-                .scrollWheelEventMomentumPhase,
-                value: 0
-            )
-            wheelEnd.post(tap: .cgSessionEventTap)
-        }
-
-        if let shiftUp = CGEvent(
-            keyboardEventSource: source,
-            virtualKey: 56,
-            keyDown: false
-        ) {
-            shiftUp.flags = []
-            shiftUp.post(tap: .cgSessionEventTap)
-        }
-
-        continuousCanvasRotateActive = false
-    }
-
-    /// Known-good fallback retained so the new cursor-free path can be
-    /// rolled back from the profile picker without another build.
+    /// Known-good cursor-free fallback: CSP's documented Shift + mouse wheel.
     private func executeCanvasRotateShiftWheel(delta: Int32) {
-        endCanvasRotateContinuousShiftWheel()
-
         let source = CGEventSource(stateID: .hidSystemState)
 
         if let shiftDown = CGEvent(

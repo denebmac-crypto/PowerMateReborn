@@ -446,8 +446,8 @@ struct ActionConfigRow: View {
                         }
 
                         Text(
-                            config.canvasRotateMethod == .continuousShiftWheel
-                                ? "Cursor-free continuous scroll gesture"
+                            config.canvasRotateMethod == .cspShortcut
+                                ? "CSP - / ^ shortcuts; cursor never moves. Set CSP Canvas > Display Angle > Step Value for fine increments."
                                 : "Known-good Shift + mouse wheel fallback"
                         )
                         .foregroundStyle(.secondary)

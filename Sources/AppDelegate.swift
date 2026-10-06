@@ -850,19 +850,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
     }
 
     @objc private func showCustomSettings() {
-        if customSettingsWindowController == nil {
-            let settingsView = CustomModeSettingsView()
+        // The reusable Profile/Device editor is the single source of truth
+        // for Custom Mode. Keep the legacy menu entry as an alias so action
+        // edits such as Scroll Amount always affect the live runtime store.
+        if deviceSettingsWindowController == nil {
+            let settingsView = PowerMateDeviceSettingsView()
             let hostingController = NSHostingController(rootView: settingsView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "Custom Mode Settings"
+            window.title = "PowerMate Devices & Profiles"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 750, height: 500))
-            
-            let controller = NSWindowController(window: window)
-            customSettingsWindowController = controller
+            window.setContentSize(NSSize(width: 900, height: 620))
+
+            deviceSettingsWindowController = NSWindowController(
+                window: window
+            )
         }
-        
-        customSettingsWindowController?.showWindow(nil)
+
+        deviceSettingsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
