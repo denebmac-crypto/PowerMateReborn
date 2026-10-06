@@ -489,25 +489,43 @@ class CustomModeEngine: ObservableObject {
 
     // MARK: - Smooth Canvas Rotation
 
-    /// Uses CSP's native alternate rotation gesture: Shift + mouse wheel.
-    /// Pixel-unit wheel events provide fine-grained continuous input without
-    /// moving the physical cursor or synthesizing a mouse drag.
+    /// Clip Studio Paint supports canvas rotation with Shift + mouse wheel.
+    /// Send the modifier as an explicit key event so CSP sees the same
+    /// modifier state as a physical keyboard, then emit a normal line-based
+    /// vertical wheel event.
     private func executeCanvasRotate(rotationDelta: Int) {
         let wheelDelta = canvasRotatePixelsPerTick * Int32(rotationDelta)
+        let source = CGEventSource(stateID: .hidSystemState)
 
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
+        if let shiftDown = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 56,
+            keyDown: true
+        ) {
+            shiftDown.flags = .maskShift
+            shiftDown.post(tap: .cgSessionEventTap)
+        }
+
+        if let wheel = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .line,
             wheelCount: 1,
             wheel1: wheelDelta,
             wheel2: 0,
             wheel3: 0
-        ) else {
-            return
+        ) {
+            wheel.flags = .maskShift
+            wheel.post(tap: .cgSessionEventTap)
         }
 
-        event.flags = .maskShift
-        event.post(tap: .cgSessionEventTap)
+        if let shiftUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 56,
+            keyDown: false
+        ) {
+            shiftUp.flags = []
+            shiftUp.post(tap: .cgSessionEventTap)
+        }
     }
 
     private func postKeyEvent(
