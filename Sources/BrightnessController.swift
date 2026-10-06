@@ -328,14 +328,22 @@ class BrightnessController {
 
     // MARK: - Cleanup
 
-    /// Restore original gamma on quit
+    /// Restore the user's ColorSync gamma settings on quit.
+    ///
+    /// Do not write back the captured table directly here. On modern macOS,
+    /// especially Tahoe, CGSetDisplayTransferByTable can behave inconsistently.
+    /// ColorSync restoration asks macOS to restore the profile-defined tables.
     func restoreGamma() {
-        for (id, state) in states {
-            if (state.method == .gamma || state.method == .ddcHybrid) && state.gammaTableCaptured {
-                CGSetDisplayTransferByTable(id, 256,
-                                            state.originalGammaRed, state.originalGammaGreen, state.originalGammaBlue)
-            }
+        let hadGammaState = states.values.contains {
+            ($0.method == .gamma || $0.method == .ddcHybrid) && $0.gammaTableCaptured
+        }
+
+        for (_, state) in states {
             state.overlayWindow?.orderOut(nil)
+        }
+
+        if hadGammaState {
+            CGDisplayRestoreColorSyncSettings()
         }
     }
 
