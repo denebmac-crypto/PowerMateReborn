@@ -1067,6 +1067,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
     }
 
     func powerMateDidDisconnect(identity: PowerMateHardwareIdentity) {
+        if currentMode == .custom,
+           let profile = deviceConfiguration.profile(for: identity) {
+            customEngine.handleButtonReleased(
+                profile: profile,
+                identity: identity
+            )
+        }
+
         deviceConfiguration.markDisconnected(identity)
 
         NSLog(
