@@ -47,7 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
 
     // Multi-mode
     private var currentMode: KnobMode = .volume
-    private var enabledModes: [KnobMode] = [.volume, .brightness]
+    private var enabledModes: [KnobMode] = [.volume, .brightness, .midi, .custom]
 
     // Settings
     private var stepSize: Float = 0.03  // 3% per rotation tick
@@ -457,14 +457,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             deviceProfilesItem.image = img
         }
         menu.addItem(deviceProfilesItem)
-
-        // Custom Mode Settings
-        let customSettingsItem = NSMenuItem(title: "Custom Mode Settings...", action: #selector(showCustomSettings), keyEquivalent: "")
-        customSettingsItem.target = self
-        if let img = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: nil) {
-            customSettingsItem.image = img
-        }
-        menu.addItem(customSettingsItem)
 
         // Launch at Login toggle
         let loginItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
@@ -1129,18 +1121,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             midiController.adjustCC(by: adjustment)
 
         case .custom:
-            if let profile = deviceConfiguration.profile(for: identity) {
-                customEngine.handleRotation(
-                    delta: delta,
-                    stepSize: stepSize,
-                    profile: profile
-                )
-            } else {
-                customEngine.handleRotation(
-                    delta: delta,
-                    stepSize: stepSize
-                )
+            guard let profile = deviceConfiguration.profile(for: identity) else {
+                NSLog("Custom: no Profile assigned to %@", identity.identifier)
+                return
             }
+
+            NSLog(
+                "Custom: rotate identity=%@ profile=%@ delta=%d",
+                identity.identifier,
+                profile.name,
+                delta
+            )
+
+            customEngine.handleRotation(
+                delta: delta,
+                stepSize: stepSize,
+                profile: profile
+            )
         }
 
         updateLEDForLevel(for: identity)
@@ -1188,11 +1185,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             midiController.toggleNote()
 
         case .custom:
-            if let profile = deviceConfiguration.profile(for: identity) {
-                customEngine.handleSingleTap(profile: profile)
-            } else {
-                customEngine.handleSingleTap()
+            guard let profile = deviceConfiguration.profile(for: identity) else {
+                NSLog("Custom: no Profile assigned to %@", identity.identifier)
+                return
             }
+
+            NSLog(
+                "Custom: single tap identity=%@ profile=%@",
+                identity.identifier,
+                profile.name
+            )
+            customEngine.handleSingleTap(profile: profile)
         }
 
         updateLEDForLevel(for: identity)
@@ -1223,11 +1226,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             midiController.toggleNote()
 
         case .custom:
-            if let profile = deviceConfiguration.profile(for: identity) {
-                customEngine.handleDoubleTap(profile: profile)
-            } else {
-                customEngine.handleDoubleTap()
+            guard let profile = deviceConfiguration.profile(for: identity) else {
+                NSLog("Custom: no Profile assigned to %@", identity.identifier)
+                return
             }
+
+            NSLog(
+                "Custom: double tap identity=%@ profile=%@",
+                identity.identifier,
+                profile.name
+            )
+            customEngine.handleDoubleTap(profile: profile)
         }
 
         updateLEDForLevel(for: identity)
@@ -1267,8 +1276,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
                 profile: profile,
                 identity: identity
             )
-        } else {
-            customEngine.handleButtonReleased()
         }
     }
 
@@ -1307,8 +1314,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             currentMode = m
         }
         if let modes = d.array(forKey: "powermate.enabledModes") as? [String] {
-            let parsed = modes.compactMap { KnobMode(rawValue: $0) }
-            if !parsed.isEmpty { enabledModes = parsed }
+            var parsed = modes.compactMap { KnobMode(rawValue: $0) }
+            if !parsed.contains(.custom) {
+                parsed.append(.custom)
+            }
+            if !parsed.isEmpty {
+                enabledModes = parsed
+            }
+        }
+
+        if !enabledModes.contains(currentMode) {
+            currentMode = enabledModes.first ?? .volume
         }
         if d.object(forKey: "powermate.stepSize") != nil {
             stepSize = d.float(forKey: "powermate.stepSize")
