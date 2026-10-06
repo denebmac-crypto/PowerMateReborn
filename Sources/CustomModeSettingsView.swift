@@ -313,6 +313,26 @@ struct ActionConfigRow: View {
                         }
                         .frame(width: 150)
 
+                        HStack(spacing: 10) {
+                            Text("Scroll Amount")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(config.scrollAmount) },
+                                    set: { config.scrollAmount = Int($0.rounded()) }
+                                ),
+                                in: 1...20,
+                                step: 1
+                            )
+                            .frame(width: 180)
+
+                            Text("\(config.scrollAmount)")
+                                .monospacedDigit()
+                                .frame(width: 28, alignment: .trailing)
+                        }
+
                     case .keyboard:
                         HStack {
                             Text(config.keyboardShortcut.displayString.isEmpty ? "None" : config.keyboardShortcut.displayString)
@@ -387,9 +407,40 @@ struct ActionConfigRow: View {
                         .frame(width: 260)
 
                     case .canvasRotate:
-                        Text("PowerMate rotation is sent to the canvas as a smooth Shift+Space drag.")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                        Picker("Method", selection: $config.canvasRotateMethod) {
+                            ForEach(CanvasRotateMethod.allCases) { method in
+                                Text(method.displayName).tag(method)
+                            }
+                        }
+                        .frame(width: 210)
+
+                        HStack(spacing: 10) {
+                            Text("Rotation Amount")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(config.canvasRotateAmount) },
+                                    set: { config.canvasRotateAmount = Int($0.rounded()) }
+                                ),
+                                in: 1...20,
+                                step: 1
+                            )
+                            .frame(width: 180)
+
+                            Text("\(config.canvasRotateAmount) px")
+                                .monospacedDigit()
+                                .frame(width: 54, alignment: .trailing)
+                        }
+
+                        Text(
+                            config.canvasRotateMethod == .shiftWheel
+                                ? "Shift + mouse wheel"
+                                : "R + drag (temporarily moves and restores the cursor)"
+                        )
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
                     }
                 }
                 .padding(.leading, 4)

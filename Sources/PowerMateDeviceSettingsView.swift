@@ -53,6 +53,7 @@ struct PowerMateDeviceSettingsView: View {
                 }
             }
             .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 240, ideal: 275, max: 380)
             .navigationTitle("PowerMates")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

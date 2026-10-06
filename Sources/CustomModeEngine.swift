@@ -48,6 +48,20 @@ enum ScrollDirection: String, Codable, CaseIterable {
     case up, down, left, right
 }
 
+enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
+    case shiftWheel
+    case rDrag
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .shiftWheel: return "Shift + Mouse Wheel"
+        case .rDrag:      return "R + Drag"
+        }
+    }
+}
+
 enum MediaCommand: String, Codable, CaseIterable {
     case playPause = "Play/Pause"
     case nextTrack = "Next"
@@ -87,6 +101,64 @@ struct CodableActionConfig: Codable, Equatable {
     var midiCC: MIDICCConfig = MIDICCConfig()
     var midiNote: MIDINoteConfig = MIDINoteConfig()
     var osc: OSCConfig = OSCConfig()
+
+    // Tunable amounts are persisted per Action so every Profile/App mapping
+    // can have its own sensitivity without changing global device settings.
+    var scrollAmount: Int = 3
+    var canvasRotateMethod: CanvasRotateMethod = .shiftWheel
+    var canvasRotateAmount: Int = 4
+
+    init(
+        type: CodableActionType = .unassigned,
+        scrollDirection: ScrollDirection = .up,
+        mediaCommand: MediaCommand = .playPause,
+        keyboardShortcut: KeyboardShortcut = KeyboardShortcut(),
+        midiCC: MIDICCConfig = MIDICCConfig(),
+        midiNote: MIDINoteConfig = MIDINoteConfig(),
+        osc: OSCConfig = OSCConfig(),
+        scrollAmount: Int = 3,
+        canvasRotateMethod: CanvasRotateMethod = .shiftWheel,
+        canvasRotateAmount: Int = 4
+    ) {
+        self.type = type
+        self.scrollDirection = scrollDirection
+        self.mediaCommand = mediaCommand
+        self.keyboardShortcut = keyboardShortcut
+        self.midiCC = midiCC
+        self.midiNote = midiNote
+        self.osc = osc
+        self.scrollAmount = scrollAmount
+        self.canvasRotateMethod = canvasRotateMethod
+        self.canvasRotateAmount = canvasRotateAmount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case scrollDirection
+        case mediaCommand
+        case keyboardShortcut
+        case midiCC
+        case midiNote
+        case osc
+        case scrollAmount
+        case canvasRotateMethod
+        case canvasRotateAmount
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        type = try container.decodeIfPresent(CodableActionType.self, forKey: .type) ?? .unassigned
+        scrollDirection = try container.decodeIfPresent(ScrollDirection.self, forKey: .scrollDirection) ?? .up
+        mediaCommand = try container.decodeIfPresent(MediaCommand.self, forKey: .mediaCommand) ?? .playPause
+        keyboardShortcut = try container.decodeIfPresent(KeyboardShortcut.self, forKey: .keyboardShortcut) ?? KeyboardShortcut()
+        midiCC = try container.decodeIfPresent(MIDICCConfig.self, forKey: .midiCC) ?? MIDICCConfig()
+        midiNote = try container.decodeIfPresent(MIDINoteConfig.self, forKey: .midiNote) ?? MIDINoteConfig()
+        osc = try container.decodeIfPresent(OSCConfig.self, forKey: .osc) ?? OSCConfig()
+        scrollAmount = try container.decodeIfPresent(Int.self, forKey: .scrollAmount) ?? 3
+        canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .shiftWheel
+        canvasRotateAmount = try container.decodeIfPresent(Int.self, forKey: .canvasRotateAmount) ?? 4
+    }
 }
 
 struct CodableAppProfile: Codable, Identifiable, Equatable {
@@ -127,9 +199,7 @@ class CustomModeEngine: ObservableObject {
     // Extended press state for device-assigned profiles.
     private var deviceExtendedPressActions: [PowerMateHardwareIdentity: CodableActionConfig] = [:]
 
-    // Shift+wheel is the native alternate canvas-rotation gesture in
-    // Clip Studio Paint. Pixel units keep PowerMate rotation granular.
-    private let canvasRotatePixelsPerTick: Int32 = 4
+    // Default fine-grained amount used by newly decoded/created Canvas Rotate actions.
 
     // CC accumulator for continuous rotation actions
     private var ccAccumulators: [UInt8: Float] = [:]  // ccNumber -> current 0-127 float
@@ -416,7 +486,12 @@ class CustomModeEngine: ObservableObject {
             break
 
         case .scroll:
-            executeScroll(action.scrollDirection, magnitude: rotationDelta != 0 ? 3 : 10)
+            executeScroll(
+                action.scrollDirection,
+                magnitude: rotationDelta != 0
+                    ? action.scrollAmount
+                    : action.scrollAmount
+            )
 
         case .keyboard:
             executeKeyboardShortcut(action.keyboardShortcut)
@@ -445,7 +520,11 @@ class CustomModeEngine: ObservableObject {
 
         case .canvasRotate:
             guard rotationDelta != 0 else { return }
-            executeCanvasRotate(rotationDelta: rotationDelta)
+            executeCanvasRotate(
+                method: action.canvasRotateMethod,
+                rotationDelta: rotationDelta,
+                amount: action.canvasRotateAmount
+            )
         }
     }
 
@@ -487,14 +566,29 @@ class CustomModeEngine: ObservableObject {
         }
     }
 
-    // MARK: - Smooth Canvas Rotation
+    // MARK: - Canvas Rotation
 
-    /// Clip Studio Paint supports canvas rotation with Shift + mouse wheel.
-    /// Send the modifier as an explicit key event so CSP sees the same
-    /// modifier state as a physical keyboard, then emit a normal line-based
-    /// vertical wheel event.
-    private func executeCanvasRotate(rotationDelta: Int) {
-        let wheelDelta = canvasRotatePixelsPerTick * Int32(rotationDelta)
+    private func executeCanvasRotate(
+        method: CanvasRotateMethod,
+        rotationDelta: Int,
+        amount: Int
+    ) {
+        let pixels = max(1, amount)
+        let signedPixels = Int32(pixels * rotationDelta)
+
+        switch method {
+        case .shiftWheel:
+            executeCanvasRotateShiftWheel(delta: signedPixels)
+
+        case .rDrag:
+            executeCanvasRotateRDrag(delta: signedPixels)
+        }
+    }
+
+    /// CSP's alternate native rotation gesture: Shift + mouse wheel.
+    /// The modifier is sent as a real key-down/key-up pair; pixel wheel
+    /// units give finer control than line-based wheel events.
+    private func executeCanvasRotateShiftWheel(delta: Int32) {
         let source = CGEventSource(stateID: .hidSystemState)
 
         if let shiftDown = CGEvent(
@@ -508,9 +602,9 @@ class CustomModeEngine: ObservableObject {
 
         if let wheel = CGEvent(
             scrollWheelEvent2Source: source,
-            units: .line,
+            units: .pixel,
             wheelCount: 1,
-            wheel1: wheelDelta,
+            wheel1: delta,
             wheel2: 0,
             wheel3: 0
         ) {
@@ -525,6 +619,70 @@ class CustomModeEngine: ObservableObject {
         ) {
             shiftUp.flags = []
             shiftUp.post(tap: .cgSessionEventTap)
+        }
+    }
+
+    /// Photoshop and CSP both support the R + drag rotation tool.
+    /// Unlike the previous attempt, move the actual cursor between mouse
+    /// down and mouse dragged so the target application receives a genuine
+    /// drag path. The cursor is restored after each micro-drag.
+    private func executeCanvasRotateRDrag(delta: Int32) {
+        guard delta != 0 else { return }
+
+        let source = CGEventSource(stateID: .hidSystemState)
+        let start = CGEvent(source: source)?.location ?? NSEvent.mouseLocation
+        let end = CGPoint(
+            x: start.x + CGFloat(delta),
+            y: start.y
+        )
+
+        if let rDown = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 15,
+            keyDown: true
+        ) {
+            rDown.post(tap: .cgSessionEventTap)
+        }
+
+        if let mouseDown = CGEvent(
+            mouseEventSource: source,
+            mouseType: .leftMouseDown,
+            mouseCursorPosition: start,
+            mouseButton: .left
+        ) {
+            mouseDown.post(tap: .cgSessionEventTap)
+        }
+
+        CGWarpMouseCursorPosition(end)
+
+        if let drag = CGEvent(
+            mouseEventSource: source,
+            mouseType: .leftMouseDragged,
+            mouseCursorPosition: end,
+            mouseButton: .left
+        ) {
+            drag.setIntegerValueField(.mouseEventDeltaX, value: Int64(delta))
+            drag.setIntegerValueField(.mouseEventDeltaY, value: 0)
+            drag.post(tap: .cgSessionEventTap)
+        }
+
+        if let mouseUp = CGEvent(
+            mouseEventSource: source,
+            mouseType: .leftMouseUp,
+            mouseCursorPosition: end,
+            mouseButton: .left
+        ) {
+            mouseUp.post(tap: .cgSessionEventTap)
+        }
+
+        CGWarpMouseCursorPosition(start)
+
+        if let rUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 15,
+            keyDown: false
+        ) {
+            rUp.post(tap: .cgSessionEventTap)
         }
     }
 
