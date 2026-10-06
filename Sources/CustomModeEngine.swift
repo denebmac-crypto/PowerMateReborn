@@ -127,12 +127,9 @@ class CustomModeEngine: ObservableObject {
     // Extended press state for device-assigned profiles.
     private var deviceExtendedPressActions: [PowerMateHardwareIdentity: CodableActionConfig] = [:]
 
-    // Smooth canvas-rotation gesture state for Clip Studio Paint.
-    private var canvasRotateActive = false
-    private var canvasRotateEndWorkItem: DispatchWorkItem?
-    private var canvasRotatePoint = CGPoint.zero
-    private let canvasRotatePixelsPerTick: Int64 = 4
-    private let canvasRotateIdleTimeout: TimeInterval = 0.12
+    // Shift+wheel is the native alternate canvas-rotation gesture in
+    // Clip Studio Paint. Pixel units keep PowerMate rotation granular.
+    private let canvasRotatePixelsPerTick: Int32 = 4
 
     // CC accumulator for continuous rotation actions
     private var ccAccumulators: [UInt8: Float] = [:]  // ccNumber -> current 0-127 float
@@ -492,74 +489,25 @@ class CustomModeEngine: ObservableObject {
 
     // MARK: - Smooth Canvas Rotation
 
-    /// Emulates CSP's continuous rotation gesture: hold Shift+Space and drag.
+    /// Uses CSP's native alternate rotation gesture: Shift + mouse wheel.
+    /// Pixel-unit wheel events provide fine-grained continuous input without
+    /// moving the physical cursor or synthesizing a mouse drag.
     private func executeCanvasRotate(rotationDelta: Int) {
-        let deltaX = canvasRotatePixelsPerTick * Int64(rotationDelta)
+        let wheelDelta = canvasRotatePixelsPerTick * Int32(rotationDelta)
 
-        canvasRotateEndWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.endCanvasRotateGesture()
-        }
-        canvasRotateEndWorkItem = work
-
-        if !canvasRotateActive {
-            guard let currentMouseLocation = CGEvent(source: nil)?.location else { return }
-            canvasRotatePoint = currentMouseLocation
-
-            postKeyEvent(keyCode: 56, flags: .maskShift, keyDown: true)
-            postKeyEvent(keyCode: 49, flags: .maskShift, keyDown: true)
-
-            if let mouseDown = CGEvent(
-                mouseEventSource: nil,
-                mouseType: .leftMouseDown,
-                mouseCursorPosition: canvasRotatePoint,
-                mouseButton: .left
-            ) {
-                mouseDown.post(tap: .cgSessionEventTap)
-            }
-
-            canvasRotateActive = true
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: wheelDelta,
+            wheel2: 0,
+            wheel3: 0
+        ) else {
+            return
         }
 
-        // CSP recognizes this gesture as a real mouse drag. Keep the
-        // event's cursor position moving as well as its delta; posting only
-        // mouseEventDeltaX at a fixed location is ignored by CSP.
-        canvasRotatePoint.x += CGFloat(deltaX)
-
-        if let drag = CGEvent(
-            mouseEventSource: nil,
-            mouseType: .leftMouseDragged,
-            mouseCursorPosition: canvasRotatePoint,
-            mouseButton: .left
-        ) {
-            drag.setIntegerValueField(.mouseEventDeltaX, value: deltaX)
-            drag.setIntegerValueField(.mouseEventDeltaY, value: 0)
-            drag.post(tap: .cgSessionEventTap)
-        }
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + canvasRotateIdleTimeout,
-            execute: work
-        )
-    }
-
-    private func endCanvasRotateGesture() {
-        guard canvasRotateActive else { return }
-
-        if let mouseUp = CGEvent(
-            mouseEventSource: nil,
-            mouseType: .leftMouseUp,
-            mouseCursorPosition: canvasRotatePoint,
-            mouseButton: .left
-        ) {
-            mouseUp.post(tap: .cgSessionEventTap)
-        }
-
-        postKeyEvent(keyCode: 49, flags: .maskShift, keyDown: false)
-        postKeyEvent(keyCode: 56, flags: [], keyDown: false)
-
-        canvasRotateActive = false
-        canvasRotateEndWorkItem = nil
+        event.flags = .maskShift
+        event.post(tap: .cgSessionEventTap)
     }
 
     private func postKeyEvent(
@@ -728,9 +676,6 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
-        canvasRotateEndWorkItem?.cancel()
-        endCanvasRotateGesture()
-
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
         }
