@@ -658,7 +658,7 @@ private struct ProfileMappingEditorView: View {
         } else {
             Image(systemName: mapping.isGlobal ? "globe" : "app")
                 .font(.system(size: 34))
-                .foregroundStyle(mapping.isGlobal ? .tint : .primary)
+                .foregroundStyle(mapping.isGlobal ? Color.accentColor : Color.primary)
                 .frame(width: 40, height: 40)
         }
     }
