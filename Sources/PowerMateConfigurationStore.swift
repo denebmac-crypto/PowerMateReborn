@@ -181,13 +181,13 @@ final class PowerMateConfigurationStore: ObservableObject {
 
         for scalar in Unicode.Scalar("A").value...Unicode.Scalar("Z").value {
             let suffix = String(UnicodeScalar(scalar)!)
-            let candidate = "PowerMate (suffix)"
+            let candidate = "PowerMate " + suffix
             if !existing.contains(candidate) {
                 return candidate
             }
         }
 
-        return "PowerMate (configuration.devices.count + 1)"
+        return "PowerMate " + String(configuration.devices.count + 1)
     }
 
     private static func makeEmptyProfile(
