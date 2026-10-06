@@ -49,17 +49,17 @@ enum ScrollDirection: String, Codable, CaseIterable {
 }
 
 enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
-    /// CSP's native left/right canvas-rotation commands. No cursor movement.
-    case cspShortcut
-    /// Preserved known-good fallback.
+    /// Wacom's documented CSP Touch Ring path: direction-specific keystrokes.
+    case wacomKeystroke
+    /// Previously tested and working cursor-free fallback.
     case shiftWheel
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .cspShortcut:
-            return "CSP Rotation Shortcut (No Cursor)"
+        case .wacomKeystroke:
+            return "Wacom-style Keystroke (No Cursor)"
         case .shiftWheel:
             return "Shift + Mouse Wheel (Fallback)"
         }
@@ -68,14 +68,14 @@ enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
     init(from decoder: Decoder) throws {
         let rawValue = try decoder.singleValueContainer().decode(String.self)
         switch rawValue {
-        case "cspShortcut":
-            self = .cspShortcut
+        case "wacomKeystroke":
+            self = .wacomKeystroke
         case "shiftWheel":
             self = .shiftWheel
-        case "continuousShiftWheel", "rDrag":
-            self = .cspShortcut
+        case "cspShortcut", "continuousShiftWheel", "rDrag":
+            self = .shiftWheel
         default:
-            self = .cspShortcut
+            self = .shiftWheel
         }
     }
 }
@@ -123,8 +123,10 @@ struct CodableActionConfig: Codable, Equatable {
     // Tunable amounts are persisted per Action so every Profile/App mapping
     // can have its own sensitivity without changing global device settings.
     var scrollAmount: Int = 3
-    var canvasRotateMethod: CanvasRotateMethod = .cspShortcut
+    var canvasRotateMethod: CanvasRotateMethod = .shiftWheel
     var canvasRotateAmount: Int = 1
+    var canvasRotateLeftShortcut: KeyboardShortcut = KeyboardShortcut()
+    var canvasRotateRightShortcut: KeyboardShortcut = KeyboardShortcut()
 
     init(
         type: CodableActionType = .unassigned,
@@ -136,7 +138,9 @@ struct CodableActionConfig: Codable, Equatable {
         osc: OSCConfig = OSCConfig(),
         scrollAmount: Int = 3,
         canvasRotateMethod: CanvasRotateMethod = .shiftWheel,
-        canvasRotateAmount: Int = 4
+        canvasRotateAmount: Int = 1,
+        canvasRotateLeftShortcut: KeyboardShortcut = KeyboardShortcut(),
+        canvasRotateRightShortcut: KeyboardShortcut = KeyboardShortcut()
     ) {
         self.type = type
         self.scrollDirection = scrollDirection
@@ -148,6 +152,8 @@ struct CodableActionConfig: Codable, Equatable {
         self.scrollAmount = scrollAmount
         self.canvasRotateMethod = canvasRotateMethod
         self.canvasRotateAmount = canvasRotateAmount
+        self.canvasRotateLeftShortcut = canvasRotateLeftShortcut
+        self.canvasRotateRightShortcut = canvasRotateRightShortcut
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -161,6 +167,8 @@ struct CodableActionConfig: Codable, Equatable {
         case scrollAmount
         case canvasRotateMethod
         case canvasRotateAmount
+        case canvasRotateLeftShortcut
+        case canvasRotateRightShortcut
     }
 
     init(from decoder: Decoder) throws {
@@ -174,8 +182,16 @@ struct CodableActionConfig: Codable, Equatable {
         midiNote = try container.decodeIfPresent(MIDINoteConfig.self, forKey: .midiNote) ?? MIDINoteConfig()
         osc = try container.decodeIfPresent(OSCConfig.self, forKey: .osc) ?? OSCConfig()
         scrollAmount = try container.decodeIfPresent(Int.self, forKey: .scrollAmount) ?? 3
-        canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .cspShortcut
+        canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .shiftWheel
         canvasRotateAmount = try container.decodeIfPresent(Int.self, forKey: .canvasRotateAmount) ?? 1
+        canvasRotateLeftShortcut = try container.decodeIfPresent(
+            KeyboardShortcut.self,
+            forKey: .canvasRotateLeftShortcut
+        ) ?? KeyboardShortcut()
+        canvasRotateRightShortcut = try container.decodeIfPresent(
+            KeyboardShortcut.self,
+            forKey: .canvasRotateRightShortcut
+        ) ?? KeyboardShortcut()
     }
 }
 
@@ -542,7 +558,8 @@ class CustomModeEngine: ObservableObject {
             executeCanvasRotate(
                 method: action.canvasRotateMethod,
                 rotationDelta: rotationDelta,
-                amount: action.canvasRotateAmount
+                amount: action.canvasRotateAmount,
+                action: action
             )
         }
     }
@@ -609,12 +626,17 @@ class CustomModeEngine: ObservableObject {
     private func executeCanvasRotate(
         method: CanvasRotateMethod,
         rotationDelta: Int,
-        amount: Int
+        amount: Int,
+        action: CodableActionConfig
     ) {
         switch method {
-        case .cspShortcut:
-            executeCanvasRotateCSPShortcut(
-                direction: rotationDelta,
+        case .wacomKeystroke:
+            let shortcut = rotationDelta > 0
+                ? action.canvasRotateRightShortcut
+                : action.canvasRotateLeftShortcut
+
+            executeRepeatedKeyboardShortcut(
+                shortcut,
                 repeats: max(1, min(20, amount))
             )
 
@@ -626,40 +648,27 @@ class CustomModeEngine: ObservableObject {
         }
     }
 
-    /// CSP's built-in Rotate Left / Rotate Right commands.
-    ///
-    /// CSP's documented macOS defaults are "-" for Rotate Left and "^" for
-    /// Rotate Right. Sending these commands directly is cursor-free and uses
-    /// the same command path as CSP's menu shortcuts.
-    private func executeCanvasRotateCSPShortcut(
-        direction: Int,
+    /// Wacom documents CSP canvas rotation through Touch Ring -> Keystroke:
+    /// the Ring sends the user's configured left/right CSP rotation commands.
+    /// This reproduces that cursor-free input path.
+    private func executeRepeatedKeyboardShortcut(
+        _ shortcut: KeyboardShortcut,
         repeats: Int
     ) {
-        let keyCode: CGKeyCode = direction > 0 ? 22 : 27
-        let modifiers: CGEventFlags = direction > 0 ? .maskShift : []
+        guard shortcut.keyCode != 0 || shortcut.modifiers != 0 else {
+            return
+        }
 
-        for _ in 0..<repeats {
-            if let keyDown = CGEvent(
-                keyboardEventSource: nil,
-                virtualKey: keyCode,
-                keyDown: true
-            ) {
-                keyDown.flags = modifiers
-                keyDown.post(tap: .cgSessionEventTap)
-            }
+        for index in 0..<max(1, repeats) {
+            executeKeyboardShortcut(shortcut)
 
-            if let keyUp = CGEvent(
-                keyboardEventSource: nil,
-                virtualKey: keyCode,
-                keyDown: false
-            ) {
-                keyUp.flags = modifiers
-                keyUp.post(tap: .cgSessionEventTap)
+            if index + 1 < repeats {
+                usleep(2000)
             }
         }
     }
 
-    /// Known-good cursor-free fallback: CSP's documented Shift + mouse wheel.
+    /// Known-good cursor-free fallback: CSP's Shift + mouse wheel.
     private func executeCanvasRotateShiftWheel(delta: Int32) {
         let source = CGEventSource(stateID: .hidSystemState)
 

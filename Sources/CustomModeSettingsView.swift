@@ -282,6 +282,13 @@ struct ActionConfigRow: View {
     @State private var isRecordingShortcut = false
     @State private var shortcutDisplayString = ""
 
+    private enum CanvasShortcutSide {
+        case left
+        case right
+    }
+
+    @State private var recordingCanvasShortcut: CanvasShortcutSide?
+
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             Label(title, systemImage: icon)
@@ -425,29 +432,58 @@ struct ActionConfigRow: View {
                         }
                         .frame(width: 300)
 
-                        HStack(spacing: 10) {
-                            Text("Rotation Amount")
-                                .font(.caption)
+                        if config.canvasRotateMethod == .wacomKeystroke {
+                            canvasRotationShortcutRow(
+                                title: "Rotate Left",
+                                shortcut: config.canvasRotateLeftShortcut,
+                                side: .left
+                            )
+
+                            canvasRotationShortcutRow(
+                                title: "Rotate Right",
+                                shortcut: config.canvasRotateRightShortcut,
+                                side: .right
+                            )
+
+                            Text("Record the exact shortcuts currently assigned to CSP's Rotate Left and Rotate Right commands. This matches Wacom's documented Touch Ring keystroke method and never moves the cursor.")
                                 .foregroundStyle(.secondary)
+                                .font(.caption)
+                        }
+
+                        HStack(spacing: 10) {
+                            Text(
+                                config.canvasRotateMethod == .wacomKeystroke
+                                    ? "Key Presses / Step"
+                                    : "Wheel Amount"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
                             Slider(
                                 value: Binding(
-                                    get: { Double(config.canvasRotateAmount) },
-                                    set: { config.canvasRotateAmount = Int($0.rounded()) }
+                                    get: {
+                                        Double(max(1, min(20, config.canvasRotateAmount)))
+                                    },
+                                    set: { value in
+                                        config.canvasRotateAmount = max(
+                                            1,
+                                            min(20, Int(value.rounded()))
+                                        )
+                                    }
                                 ),
                                 in: 1...20,
                                 step: 1
                             )
                             .frame(width: 180)
 
-                            Text("\(config.canvasRotateAmount) px")
+                            Text("\(max(1, min(20, config.canvasRotateAmount)))")
                                 .monospacedDigit()
                                 .frame(width: 54, alignment: .trailing)
                         }
 
                         Text(
-                            config.canvasRotateMethod == .cspShortcut
-                                ? "CSP - / ^ shortcuts; cursor never moves. Set CSP Canvas > Display Angle > Step Value for fine increments."
+                            config.canvasRotateMethod == .wacomKeystroke
+                                ? "Wacom-style: direction-specific keystrokes, no cursor movement"
                                 : "Known-good Shift + mouse wheel fallback"
                         )
                         .foregroundStyle(.secondary)
@@ -458,6 +494,64 @@ struct ActionConfigRow: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func canvasRotationShortcutRow(
+        title: String,
+        shortcut: KeyboardShortcut,
+        side: CanvasShortcutSide
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .frame(width: 110, alignment: .leading)
+
+            Text(
+                shortcut.displayString.isEmpty
+                    ? "Not set"
+                    : shortcut.displayString
+            )
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.15))
+            .cornerRadius(4)
+            .frame(minWidth: 150, alignment: .leading)
+
+            Button(
+                recordingCanvasShortcut == side
+                    ? "Press keys..."
+                    : "Record"
+            ) {
+                startCanvasShortcutRecording(side)
+            }
+            .buttonStyle(.bordered)
+            .disabled(
+                recordingCanvasShortcut != nil &&
+                recordingCanvasShortcut != side
+            )
+        }
+    }
+
+    private func startCanvasShortcutRecording(_ side: CanvasShortcutSide) {
+        recordingCanvasShortcut = side
+
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let shortcut = KeyboardShortcut(
+                keyCode: event.keyCode,
+                modifiers: UInt64(event.modifierFlags.rawValue),
+                displayString: shortcutString(event)
+            )
+
+            switch side {
+            case .left:
+                config.canvasRotateLeftShortcut = shortcut
+            case .right:
+                config.canvasRotateRightShortcut = shortcut
+            }
+
+            recordingCanvasShortcut = nil
+            return nil
+        }
     }
 
     private func startShortcutRecording() {
