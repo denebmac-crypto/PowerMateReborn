@@ -14,6 +14,8 @@ final class PowerMateConfigurationStore: ObservableObject {
     @Published private(set) var connectedIdentities: Set<PowerMateHardwareIdentity> = []
 
     private let userDefaultsKey = "powermate.deviceProfiles.configuration"
+    private let migrationVersionKey = "powermate.deviceProfiles.migrationVersion"
+    private let currentMigrationVersion = 2
 
     private init() {
         if
@@ -585,7 +587,17 @@ final class PowerMateConfigurationStore: ObservableObject {
             NSLog("Config: normalized reusable Profiles and hardware registry")
         }
 
-        repairUnassignedLegacyProfileAssignments()
+        let migrationVersion = UserDefaults.standard.integer(
+            forKey: migrationVersionKey
+        )
+
+        if migrationVersion < currentMigrationVersion {
+            repairUnassignedLegacyProfileAssignments()
+            UserDefaults.standard.set(
+                currentMigrationVersion,
+                forKey: migrationVersionKey
+            )
+        }
     }
 
     /// Repairs the migration state produced by the old "device owns Profile"
@@ -611,9 +623,7 @@ final class PowerMateConfigurationStore: ObservableObject {
             }
 
             let scalarValue = Unicode.Scalar("A").value + UInt32(number - 1)
-            guard let scalar = UnicodeScalar(scalarValue) else {
-                continue
-            }
+            let scalar = UnicodeScalar(scalarValue)
 
             let legacyName = "PowerMate " + String(scalar)
 
