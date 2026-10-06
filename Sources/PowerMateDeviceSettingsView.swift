@@ -75,7 +75,7 @@ struct PowerMateDeviceSettingsView: View {
             List(store.configuration.profiles, selection: $selectedProfileID) { profile in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(profile.name)
-                    Text("(profile.appProfiles.count) application mapping(s)")
+                    Text("\\(profile.appProfiles.count) application mapping(s)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
