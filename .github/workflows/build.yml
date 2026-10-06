@@ -72,14 +72,24 @@ jobs:
           if [ -n "$SPARKLE_FRAMEWORK" ]; then
             cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
 
-            SPARKLE_DEP="$(otool -L "$APP/Contents/MacOS/PowerMateDriver" | awk '/Sparkle.framework\\/Versions\\// {print $1; exit}')"
+            SPARKLE_DEP="$(otool -L "$APP/Contents/MacOS/PowerMateDriver" | grep 'Sparkle.framework' | head -n 1 | awk '{print $1}')"
             if [ -n "$SPARKLE_DEP" ]; then
-              SPARKLE_VERSION="$(basename "$(dirname "$SPARKLE_DEP")")"
-              install_name_tool -change                 "$SPARKLE_DEP"                 "@executable_path/../Frameworks/Sparkle.framework/Versions/$SPARKLE_VERSION/Sparkle"                 "$APP/Contents/MacOS/PowerMateDriver"
+              SPARKLE_VERSION="$(echo "$SPARKLE_DEP" | sed -n 's#.*Sparkle.framework/Versions/\\([^/]*\\)/Sparkle#\\1#p')"
+              if [ -n "$SPARKLE_VERSION" ]; then
+                install_name_tool -change                   "$SPARKLE_DEP"                   "@executable_path/../Frameworks/Sparkle.framework/Versions/$SPARKLE_VERSION/Sparkle"                   "$APP/Contents/MacOS/PowerMateDriver"
+              else
+                echo "Could not determine Sparkle framework version from: $SPARKLE_DEP"
+                exit 1
+              fi
+            else
+              echo "Sparkle framework dependency not found"
+              exit 1
             fi
           fi
 
           codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+          otool -L "$APP/Contents/MacOS/PowerMateDriver"
 
           hdiutil create             -volname "PowerMateReborn"             -srcfolder "$APP"             -ov             -format UDZO             "PowerMateDriver.dmg"
 
