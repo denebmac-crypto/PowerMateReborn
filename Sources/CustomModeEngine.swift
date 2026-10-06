@@ -214,6 +214,15 @@ class CustomModeEngine: ObservableObject {
     private func onFrontmostAppChanged() {
         guard let app = NSWorkspace.shared.frontmostApplication else { return }
         let bundleID = app.bundleIdentifier ?? ""
+
+        // PowerMateReborn's own settings window must not become the target
+        // application for device profiles. Keep the last external app so
+        // opening the Devices & Profiles window does not silently switch
+        // Custom Mode back to the reusable Profile's Default mapping.
+        if bundleID == Bundle.main.bundleIdentifier {
+            return
+        }
+
         guard bundleID != currentBundleID else { return }
         currentBundleID = bundleID
         resolveActiveProfile()
@@ -248,18 +257,25 @@ class CustomModeEngine: ObservableObject {
         // Resolve the frontmost application at the moment of input. The
         // cached observer value is only a fallback; otherwise a Profile
         // edited for CSP could accidentally execute its Default mapping.
-        let bundleID =
-            NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-            ?? currentBundleID
-            ?? ""
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let bundleID: String
+
+        if let frontmostBundleID,
+           frontmostBundleID != Bundle.main.bundleIdentifier {
+            bundleID = frontmostBundleID
+        } else {
+            bundleID = currentBundleID ?? ""
+        }
 
         if let match = profile.appProfiles.first(where: {
             !$0.isGlobal && $0.bundleIdentifier == bundleID
         }) {
             NSLog(
-                "Custom: selected app mapping '%@' for %@",
+                "Custom: selected app mapping '%@' for %@ (action L=%@ R=%@)",
                 match.name,
-                bundleID
+                bundleID,
+                match.rotateLeft.type.rawValue,
+                match.rotateRight.type.rawValue
             )
             return match
         }
@@ -268,9 +284,11 @@ class CustomModeEngine: ObservableObject {
             ?? profile.appProfiles.first
 
         NSLog(
-            "Custom: selected Default mapping '%@' for %@",
+            "Custom: selected Default mapping '%@' for %@ (target=%@ action L=%@ R=%@)",
             fallback?.name ?? "none",
-            bundleID
+            bundleID,
+            fallback?.rotateLeft.type.rawValue ?? "none",
+            fallback?.rotateRight.type.rawValue ?? "none"
         )
 
         return fallback
