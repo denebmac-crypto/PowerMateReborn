@@ -537,7 +537,8 @@ final class PowerMateConfigurationStore: ObservableObject {
 
         guard suffix.count == 1,
               let scalar = suffix.unicodeScalars.first,
-              ("A"..."Z").contains(scalar)
+              scalar.value >= Unicode.Scalar("A").value,
+              scalar.value <= Unicode.Scalar("Z").value
         else {
             return nil
         }
