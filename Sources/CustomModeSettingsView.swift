@@ -419,12 +419,20 @@ struct ActionConfigRow: View {
                         .frame(width: 260)
 
                     case .canvasRotate:
+                        // Keep the proven native Wacom gesture as the only
+                        // selectable rotation method. The legacy F13/Shift+Wheel
+                        // implementations remain in the code for compatibility,
+                        // but are intentionally not exposed in the UI.
                         Picker("Method", selection: $config.canvasRotateMethod) {
-                            ForEach(CanvasRotateMethod.allCases) { method in
-                                Text(method.displayName).tag(method)
-                            }
+                            Text(CanvasRotateMethod.wacomNativeGesture.displayName)
+                                .tag(CanvasRotateMethod.wacomNativeGesture)
                         }
                         .frame(width: 300)
+                        .onAppear {
+                            if config.canvasRotateMethod != .wacomNativeGesture {
+                                config.canvasRotateMethod = .wacomNativeGesture
+                            }
+                        }
 
                         HStack(spacing: 10) {
                             Text("Rotation Amount")
@@ -467,13 +475,9 @@ struct ActionConfigRow: View {
     private func rotationMethodHelp(_ method: CanvasRotateMethod) -> String {
         switch method {
         case .wacomNativeGesture:
-            return "Wacom-style native gesture event stream: begin, rotation amount, and end phases; no wheel or cursor movement."
-        case .optionF13F14:
-            return "Option is held while F13/F14 pulses are generated from each PowerMate rotation step."
-        case .continuousShiftWheel:
-            return "Continuous CSP rotation: Shift + mouse wheel gesture stays active while PowerMate input continues; cursor never moves."
-        case .shiftWheel:
-            return "Discrete Shift + mouse wheel fallback."
+            return "Native Wacom-style gesture event stream: no wheel, no shortcut, and no cursor movement."
+        case .optionF13F14, .continuousShiftWheel, .shiftWheel:
+            return "Legacy fallback method."
         }
     }
 
