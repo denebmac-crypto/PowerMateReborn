@@ -953,7 +953,7 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
-        endCanvasRotateContinuousShiftWheel()
+        WacomNativeGestureEmitter.shared.endRotation()
 
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
