@@ -624,7 +624,12 @@ class CustomModeEngine: ObservableObject {
         switch method {
         case .wacomNativeGesture:
             let steps = max(1, min(20, amount))
-            WacomNativeGestureEmitter.shared.sendRotation(stepCount: Int32(steps * rotationDelta))
+            // PowerMate's positive rotation is opposite to Wacom's native
+            // canvas-rotation convention, so invert only the native gesture
+            // sign. The event format and amount are otherwise unchanged.
+            WacomNativeGestureEmitter.shared.sendRotation(
+                stepCount: Int32(-steps * rotationDelta)
+            )
 
         case .optionF13F14:
             let steps = max(1, min(20, amount))
