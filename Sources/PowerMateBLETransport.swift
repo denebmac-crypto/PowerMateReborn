@@ -337,6 +337,14 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
 
         if characteristic.uuid == kPowerMateBLECharRotationUUID {
             guard let byte = data.first else { return }
+
+            NSLog(
+                "BLE: Rotation raw data=%@ firstByte=%d signed=%d",
+                data.map { String(format: "%02X", $0) }.joined(separator: " "),
+                byte,
+                Int(Int8(bitPattern: byte))
+            )
+
             let delta = Int(Int8(bitPattern: byte))
 
             if delta != 0 {
