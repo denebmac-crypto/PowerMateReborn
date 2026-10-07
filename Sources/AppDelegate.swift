@@ -340,27 +340,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         }
         menu.addItem(snapItem)
         
-        // Sensitivity Config
-        let sensitivityMenu = NSMenu()
-        sensitivityMenu.autoenablesItems = false
-        var activeSensitivityName = "Medium"
-        for (label, value) in [("Low (1%)", Float(0.01)), ("Medium (3%)", Float(0.03)), ("High (5%)", Float(0.05)), ("Very High (8%)", Float(0.08))] {
-            let item = NSMenuItem(title: label, action: #selector(sensitivityChanged(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = value
-            if abs(stepSize - value) < 0.001 { 
-                item.state = .on 
-                activeSensitivityName = label.components(separatedBy: " ").first ?? label
-            }
-            sensitivityMenu.addItem(item)
-        }
-        let sensitivityItem = NSMenuItem(title: "Sensitivity: \(activeSensitivityName)", action: nil, keyEquivalent: "")
-        sensitivityItem.submenu = sensitivityMenu
-        if let img = NSImage(systemSymbolName: "dial.min", accessibilityDescription: nil) {
-            sensitivityItem.image = img
-        }
-        menu.addItem(sensitivityItem)
-
         // LED Config
         let ledMenu = NSMenu()
         ledMenu.autoenablesItems = false
