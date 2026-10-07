@@ -82,7 +82,7 @@ final class WacomIOManagerBridge {
 
         let connection = NSXPCConnection(
             machServiceName: serviceName,
-            options: []
+            options: .privileged
         )
 
         connection.remoteObjectInterface = NSXPCInterface(
