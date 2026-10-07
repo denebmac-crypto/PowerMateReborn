@@ -426,17 +426,23 @@ struct ActionConfigRow: View {
 
                             Slider(
                                 value: Binding(
-                                    get: { Double(max(1, min(5, config.canvasZoomAmount))) },
-                                    set: { value in
-                                        config.canvasZoomAmount = max(1, min(5, Int(value.rounded())))
+                                    get: {
+                                        let internalValue = max(1.0, min(5.0, config.canvasZoomAmount))
+                                        return 1.0 + (internalValue - 1.0) * 9.0 / 4.0
+                                    },
+                                    set: { uiValue in
+                                        config.canvasZoomAmount = max(
+                                            1.0,
+                                            min(5.0, 1.0 + (uiValue - 1.0) * 4.0 / 9.0)
+                                        )
                                     }
                                 ),
-                                in: 1...20,
+                                in: 1...10,
                                 step: 1
                             )
                             .frame(width: 180)
 
-                            Text("\(max(1, min(5, config.canvasZoomAmount)))")
+                            Text("\(Int((1.0 + (max(1.0, min(5.0, config.canvasZoomAmount)) - 1.0) * 9.0 / 4.0).rounded()))")
                                 .monospacedDigit()
                                 .frame(width: 54, alignment: .trailing)
                         }
@@ -469,21 +475,22 @@ struct ActionConfigRow: View {
                             Slider(
                                 value: Binding(
                                     get: {
-                                        Double(max(1, min(20, config.canvasRotateAmount)))
+                                        let internalValue = max(1.0, min(6.0, config.canvasRotateAmount))
+                                        return 1.0 + (internalValue - 1.0) * 9.0 / 5.0
                                     },
-                                    set: { value in
+                                    set: { uiValue in
                                         config.canvasRotateAmount = max(
-                                            1,
-                                            min(20, Int(value.rounded()))
+                                            1.0,
+                                            min(6.0, 1.0 + (uiValue - 1.0) * 5.0 / 9.0)
                                         )
                                     }
                                 ),
-                                in: 1...20,
+                                in: 1...10,
                                 step: 1
                             )
                             .frame(width: 180)
 
-                            Text("\(max(1, min(20, config.canvasRotateAmount)))")
+                            Text("\(Int((1.0 + (max(1.0, min(6.0, config.canvasRotateAmount)) - 1.0) * 9.0 / 5.0).rounded()))")
                                 .monospacedDigit()
                                 .frame(width: 54, alignment: .trailing)
                         }
