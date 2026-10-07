@@ -20,6 +20,8 @@ final class WacomNativeGestureEmitter {
     private let lock = NSLock()
     private var active = false
     private var endWorkItem: DispatchWorkItem?
+    private var zoomActive = false
+    private var zoomEndWorkItem: DispatchWorkItem?
     private let idleTimeout: TimeInterval = 0.50
 
     private init() {}
@@ -44,7 +46,7 @@ final class WacomNativeGestureEmitter {
                 lock.unlock()
                 return
             }
-            active = true
+            zoomActive = true
         } else {
             guard postGestureEvent(amount: amount, phase: 2) else {
                 lock.unlock()
@@ -73,12 +75,12 @@ final class WacomNativeGestureEmitter {
         guard stepCount != 0 else { return }
 
         lock.lock()
-        endWorkItem?.cancel()
-        endWorkItem = nil
+        zoomEndWorkItem?.cancel()
+        zoomEndWorkItem = nil
 
         let amount = Float(stepCount) * amountPerStep
 
-        if !active {
+        if !zoomActive {
             guard postZoomGestureEvent(amount: 0, phase: 1) else {
                 lock.unlock()
                 return
@@ -98,7 +100,7 @@ final class WacomNativeGestureEmitter {
         let workItem = DispatchWorkItem { [weak self] in
             self?.endZoom()
         }
-        endWorkItem = workItem
+        zoomEndWorkItem = workItem
         lock.unlock()
 
         DispatchQueue.main.asyncAfter(
@@ -109,16 +111,16 @@ final class WacomNativeGestureEmitter {
 
     private func endZoom() {
         lock.lock()
-        endWorkItem?.cancel()
-        endWorkItem = nil
+        zoomEndWorkItem?.cancel()
+        zoomEndWorkItem = nil
 
-        guard active else {
+        guard zoomActive else {
             lock.unlock()
             return
         }
 
         _ = postZoomGestureEvent(amount: 0, phase: 4)
-        active = false
+        zoomActive = false
         lock.unlock()
     }
 
