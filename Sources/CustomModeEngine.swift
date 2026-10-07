@@ -49,32 +49,38 @@ enum ScrollDirection: String, Codable, CaseIterable {
 }
 
 enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
-    /// CSP's native continuous canvas-rotation gesture:
-    /// Shift + mouse wheel, kept alive as one continuous scroll stream.
+    /// Wacom/Quartz native rotation gesture used by Wacom tablet drivers.
+    case wacomNativeGesture
+    /// Photoshop/Wacom-compatible undocumented keyboard command.
+    case optionF13F14
+    /// Cursor-free Shift + mouse wheel fallback.
     case continuousShiftWheel
-    /// Discrete fallback retained for compatibility/debugging.
+    /// Discrete Shift + mouse wheel fallback.
     case shiftWheel
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
+        case .wacomNativeGesture:
+            return "Wacom Native Rotation Gesture"
+        case .optionF13F14:
+            return "Option + F13/F14 (Photoshop/Wacom)"
         case .continuousShiftWheel:
-            return "Native Canvas Rotate (Wacom Event)"
+            return "Shift + Mouse Wheel (Continuous)"
         case .shiftWheel:
-            return "Shift + Mouse Wheel (Discrete Fallback)"
+            return "Shift + Mouse Wheel (Discrete)"
         }
     }
 
     init(from decoder: Decoder) throws {
         let rawValue = try decoder.singleValueContainer().decode(String.self)
         switch rawValue {
-        case "continuousShiftWheel", "wacomKeystroke", "cspShortcut", "rDrag":
-            self = .continuousShiftWheel
-        case "shiftWheel":
-            self = .shiftWheel
-        default:
-            self = .continuousShiftWheel
+        case "wacomNativeGesture": self = .wacomNativeGesture
+        case "optionF13F14": self = .optionF13F14
+        case "continuousShiftWheel", "wacomKeystroke", "cspShortcut", "rDrag": self = .continuousShiftWheel
+        case "shiftWheel": self = .shiftWheel
+        default: self = .wacomNativeGesture
         }
     }
 }
@@ -122,7 +128,7 @@ struct CodableActionConfig: Codable, Equatable {
     // Tunable amounts are persisted per Action so every Profile/App mapping
     // can have its own sensitivity without changing global device settings.
     var scrollAmount: Int = 3
-    var canvasRotateMethod: CanvasRotateMethod = .continuousShiftWheel
+    var canvasRotateMethod: CanvasRotateMethod = .wacomNativeGesture
     var canvasRotateAmount: Int = 1
 
     init(
@@ -134,7 +140,7 @@ struct CodableActionConfig: Codable, Equatable {
         midiNote: MIDINoteConfig = MIDINoteConfig(),
         osc: OSCConfig = OSCConfig(),
         scrollAmount: Int = 3,
-        canvasRotateMethod: CanvasRotateMethod = .continuousShiftWheel,
+        canvasRotateMethod: CanvasRotateMethod = .wacomNativeGesture,
         canvasRotateAmount: Int = 1
     ) {
         self.type = type
@@ -616,13 +622,19 @@ class CustomModeEngine: ObservableObject {
         action: CodableActionConfig
     ) {
         switch method {
-        case .continuousShiftWheel:
+        case .wacomNativeGesture:
             let steps = max(1, min(20, amount))
-            WacomNativeGestureEmitter.shared.sendRotation(
-                stepCount: Int32(steps * rotationDelta)
-            )
+            WacomNativeGestureEmitter.shared.sendRotation(stepCount: Int32(steps * rotationDelta))
 
-        case .shiftWheel:
+        case .optionF13F14:
+            let steps = max(1, min(20, amount))
+            let keyCode: CGKeyCode = rotationDelta > 0 ? 105 : 107
+            for _ in 0..<steps {
+                postKeyEvent(keyCode: keyCode, flags: .maskAlternate, keyDown: true)
+                postKeyEvent(keyCode: keyCode, flags: .maskAlternate, keyDown: false)
+            }
+
+        case .continuousShiftWheel:
             let pixels = max(1, min(20, amount))
             executeCanvasRotateShiftWheel(
                 delta: Int32(pixels * rotationDelta)
