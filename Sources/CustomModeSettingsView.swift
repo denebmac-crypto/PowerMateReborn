@@ -418,6 +418,33 @@ struct ActionConfigRow: View {
                         }
                         .frame(width: 260)
 
+                    case .canvasZoom:
+                        HStack(spacing: 10) {
+                            Text("Zoom Amount")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Slider(
+                                value: Binding(
+                                    get: { Double(max(1, min(20, config.canvasZoomAmount))) },
+                                    set: { value in
+                                        config.canvasZoomAmount = max(1, min(20, Int(value.rounded())))
+                                    }
+                                ),
+                                in: 1...20,
+                                step: 1
+                            )
+                            .frame(width: 180)
+
+                            Text("\(max(1, min(20, config.canvasZoomAmount)))")
+                                .monospacedDigit()
+                                .frame(width: 54, alignment: .trailing)
+                        }
+
+                        Text("Experimental Wacom-style magnification gesture: type 29, HID gesture type 8, zoom value field 113.")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+
                     case .canvasRotate:
                         // Keep the proven native Wacom gesture as the only
                         // selectable rotation method. The legacy F13/Shift+Wheel
