@@ -331,7 +331,7 @@ struct ActionConfigRow: View {
                                         )
                                     }
                                 ),
-                                in: 1...5,
+                                in: 1...20,
                                 step: 1
                             )
                             .frame(width: 180)
@@ -452,21 +452,6 @@ struct ActionConfigRow: View {
                             .font(.caption)
 
                     case .canvasRotate:
-                        // Keep the proven native Wacom gesture as the only
-                        // selectable rotation method. The legacy F13/Shift+Wheel
-                        // implementations remain in the code for compatibility,
-                        // but are intentionally not exposed in the UI.
-                        Picker("Method", selection: $config.canvasRotateMethod) {
-                            Text(CanvasRotateMethod.wacomNativeGesture.displayName)
-                                .tag(CanvasRotateMethod.wacomNativeGesture)
-                        }
-                        .frame(width: 300)
-                        .onAppear {
-                            if config.canvasRotateMethod != .wacomNativeGesture {
-                                config.canvasRotateMethod = .wacomNativeGesture
-                            }
-                        }
-
                         HStack(spacing: 10) {
                             Text("Rotation Amount")
                                 .font(.caption)
@@ -495,7 +480,7 @@ struct ActionConfigRow: View {
                                 .frame(width: 54, alignment: .trailing)
                         }
 
-                        Text(rotationMethodHelp(config.canvasRotateMethod))
+                        Text("Wacom Native Rotation Gesture: type 29, HID gesture type 5, amount field 115.")
                             .foregroundStyle(.secondary)
                             .font(.caption)
                     }
