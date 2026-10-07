@@ -431,16 +431,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         }
         menu.addItem(ddcItem)
 
-        // Sync Brightness toggle
-        let syncEnabled = brightnessController.syncDisplays
-        let syncItem = NSMenuItem(title: "Sync All Displays", action: #selector(toggleBrightnessSync(_:)), keyEquivalent: "")
-        syncItem.target = self
-        syncItem.state = syncEnabled ? .on : .off
-        if let img = NSImage(systemSymbolName: "display.2", accessibilityDescription: nil) {
-            syncItem.image = img
-        }
-        menu.addItem(syncItem)
-
         menu.addItem(NSMenuItem.separator())
 
         // PowerMate Device / Profile Settings
