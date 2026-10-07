@@ -33,6 +33,17 @@ final class WacomNativeGestureEmitter {
         guard stepCount != 0 else { return }
 
         lock.lock()
+
+        // A zoom gesture must not remain active while rotation starts.
+        // End it immediately so applications never receive overlapping
+        // native gesture streams.
+        if zoomActive {
+            zoomEndWorkItem?.cancel()
+            zoomEndWorkItem = nil
+            _ = postZoomGestureEvent(amount: 0, phase: 4)
+            zoomActive = false
+        }
+
         endWorkItem?.cancel()
         endWorkItem = nil
 
@@ -78,6 +89,17 @@ final class WacomNativeGestureEmitter {
         guard stepCount != 0 else { return }
 
         lock.lock()
+
+        // End any active rotation gesture before starting zoom. This keeps
+        // the native gesture stream single-purpose when the user switches
+        // directions immediately.
+        if active {
+            endWorkItem?.cancel()
+            endWorkItem = nil
+            _ = postGestureEvent(amount: 0, phase: 4)
+            active = false
+        }
+
         zoomEndWorkItem?.cancel()
         zoomEndWorkItem = nil
 
