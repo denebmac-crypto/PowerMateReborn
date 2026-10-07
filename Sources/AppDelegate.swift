@@ -854,6 +854,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         identity: PowerMateHardwareIdentity,
         delta: Int
     ) {
+        let receiveTime = DispatchTime.now().uptimeNanoseconds
+        NSLog(
+            "BLE Timing: app delegate t=%.6f delta=%d",
+            Double(receiveTime) / 1_000_000_000.0,
+            delta
+        )
+
         // BLE custom actions stay on the CoreBluetooth queue for minimum latency.
         // AppKit and the non-custom controller paths are always confined to main.
         if currentMode == .custom {
