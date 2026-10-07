@@ -593,6 +593,20 @@ class CustomModeEngine: ObservableObject {
             .scrollWheelEventIsContinuous,
             value: 0
         )
+
+        // Explicitly populate the fixed-point scroll fields as well as the
+        // constructor's integer delta. macOS documents these fields as the
+        // line/pixel scroll magnitude; some applications consume this field
+        // instead of wheel1 when interpreting synthetic scroll events.
+        event.setDoubleValueField(
+            .scrollWheelEventFixedPtDeltaAxis1,
+            value: Double(dy)
+        )
+        event.setDoubleValueField(
+            .scrollWheelEventFixedPtDeltaAxis2,
+            value: Double(dx)
+        )
+
         event.post(tap: .cgSessionEventTap)
     }
 
