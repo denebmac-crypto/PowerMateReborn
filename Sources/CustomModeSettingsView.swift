@@ -45,17 +45,15 @@ struct CustomModeSettingsView: View {
                         }
                     }
 
-                    Button {
-                        showingNewProfile = true
-                    } label: {
-                        Label("Add New Profile", systemImage: "plus.circle")
-                    }
-                    .padding(.vertical, 4)
                 }
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 250)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button(action: { showingNewProfile = true }) {
+                        Label("Add New Profile", systemImage: "plus.circle")
+                    }
+
                     Button(action: { showingAddApp = true }) {
                         Label("Add Application", systemImage: "plus")
                     }
