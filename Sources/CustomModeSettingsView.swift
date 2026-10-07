@@ -7,6 +7,7 @@ struct CustomModeSettingsView: View {
     @ObservedObject var engine = CustomModeEngine.shared
     @State private var selectedProfileID: UUID?
     @State private var showingAddApp: Bool = false
+    @State private var showingNewProfile: Bool = false
 
     var body: some View {
         NavigationSplitView {
@@ -43,6 +44,13 @@ struct CustomModeSettingsView: View {
                             }
                         }
                     }
+
+                    Button {
+                        showingNewProfile = true
+                    } label: {
+                        Label("Add New Profile", systemImage: "plus.circle")
+                    }
+                    .padding(.vertical, 4)
                 }
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 250)
@@ -55,6 +63,11 @@ struct CustomModeSettingsView: View {
             }
             .sheet(isPresented: $showingAddApp) {
                 AddAppSheet(engine: engine, isPresented: $showingAddApp) { newID in
+                    selectedProfileID = newID
+                }
+            }
+            .sheet(isPresented: $showingNewProfile) {
+                NewProfileSheet(engine: engine, isPresented: $showingNewProfile) { newID in
                     selectedProfileID = newID
                 }
             }
@@ -73,6 +86,64 @@ struct CustomModeSettingsView: View {
                 selectedProfileID = engine.profiles.first?.id
             }
         }
+    }
+}
+
+// MARK: - New Profile Sheet
+
+struct NewProfileSheet: View {
+    @ObservedObject var engine: CustomModeEngine
+    @Binding var isPresented: Bool
+    var onAdd: (UUID) -> Void
+
+    @State private var profileName: String = ""
+    @State private var bundleIdentifier: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add New Profile")
+                .font(.headline)
+
+            Text("Create an app-specific Profile manually. You can enter the application's Bundle ID even when the app is not running.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            TextField("Profile Name", text: $profileName)
+                .textFieldStyle(.roundedBorder)
+
+            TextField("Bundle ID (optional)", text: $bundleIdentifier)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Create") {
+                    let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let bundle = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    guard !name.isEmpty else { return }
+
+                    engine.addProfile(
+                        name: name,
+                        bundleIdentifier: bundle.isEmpty ? "manual.(UUID().uuidString)" : bundle,
+                        iconName: "app"
+                    )
+                    if let newProfile = engine.profiles.last {
+                        onAdd(newProfile.id)
+                    }
+                    isPresented = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 400)
     }
 }
 
@@ -322,21 +393,21 @@ struct ActionConfigRow: View {
                             Slider(
                                 value: Binding(
                                     get: {
-                                        Double(max(1, min(100, config.scrollAmount)))
+                                        Double(max(10, min(100, config.scrollAmount)))
                                     },
                                     set: { value in
                                         config.scrollAmount = max(
-                                            1,
+                                            10,
                                             min(100, Int(value.rounded()))
                                         )
                                     }
                                 ),
-                                in: 1...100,
-                                step: 1
+                                in: 10...100,
+                                step: 10
                             )
                             .frame(width: 180)
 
-                            Text("\(max(1, min(100, config.scrollAmount)))")
+                            Text("\(max(10, min(100, config.scrollAmount)))")
                                 .monospacedDigit()
                                 .frame(width: 28, alignment: .trailing)
 
