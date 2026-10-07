@@ -89,8 +89,8 @@ final class WacomIOManagerBridge {
             with: WacomIOManagerRemote.self
         )
 
-        connection.interruptionHandler = { error in
-            NSLog("Wacom IOManager XPC interrupted: %@", String(describing: error))
+        connection.interruptionHandler = {
+            NSLog("Wacom IOManager XPC interrupted")
         }
 
         connection.invalidationHandler = { [weak self] in
