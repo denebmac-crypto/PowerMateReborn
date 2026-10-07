@@ -23,8 +23,8 @@ final class WacomNativeGestureEmitter {
     private var zoomActive = false
     private var zoomEndWorkItem: DispatchWorkItem?
     private let zoomEventQueue = DispatchQueue(label: "PowerMateReborn.WacomZoom", qos: .userInteractive)
-    private let zoomInterpolationSteps: Int = 8
-    private let zoomInterpolationInterval: TimeInterval = 0.002
+    private let zoomInterpolationSteps: Int = 4
+    private let zoomInterpolationInterval: TimeInterval = 0.001
     private let idleTimeout: TimeInterval = 0.50
 
     private init() {}
