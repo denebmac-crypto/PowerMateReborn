@@ -165,13 +165,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         }
         menu.addItem(statusMenuItem)
         
-        let hintItem = NSMenuItem(title: "Quick Start Guide", action: #selector(showQuickStart), keyEquivalent: "")
-        hintItem.target = self
-        if let img = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "Quick Start Guide") {
-            hintItem.image = img
-        }
-        menu.addItem(hintItem)
-
         menu.addItem(NSMenuItem.separator())
 
         // --- Active Mode Selection ---
@@ -477,18 +470,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
             aboutItem.image = NSImage(size: templateImg.size)
         }
         menu.addItem(aboutItem)
-
-        // Add update check menu item
-        let updateItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "")
-        updateItem.target = self
-        if updaterController == nil {
-            updateItem.isEnabled = false
-        }
-        // Use an empty image to perfectly align the text with other menu items
-        if let templateImg = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil) {
-            updateItem.image = NSImage(size: templateImg.size)
-        }
-        menu.addItem(updateItem)
 
         let quitItem = NSMenuItem(title: "Quit PowerMate", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
