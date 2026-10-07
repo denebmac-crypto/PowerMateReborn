@@ -338,23 +338,27 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
         if characteristic.uuid == kPowerMateBLECharRotationUUID {
             guard let byte = data.first else { return }
 
-            NSLog(
-                "BLE: Rotation raw data=%@ firstByte=%d signed=%d",
-                data.map { String(format: "%02X", $0) }.joined(separator: " "),
-                byte,
-                Int(Int8(bitPattern: byte))
-            )
+            // Griffin's BLE PowerMate does not send a signed relative delta.
+            // Its rotation characteristic uses state codes:
+            //   103 = left, 104 = right, 101 = press, 114+ = hold.
+            // Convert only the two rotation states to the transport's
+            // signed one-step delta convention.
+            let delta: Int
+            switch byte {
+            case 103:
+                delta = -1
+            case 104:
+                delta = 1
+            default:
+                return
+            }
 
-            let delta = Int(Int8(bitPattern: byte))
-
-            if delta != 0 {
-                DispatchQueue.main.async {
-                    self.transportDelegate?.transport(
-                        self,
-                        identity: identity,
-                        didRotate: delta
-                    )
-                }
+            DispatchQueue.main.async {
+                self.transportDelegate?.transport(
+                    self,
+                    identity: identity,
+                    didRotate: delta
+                )
             }
         } else if characteristic.uuid == kPowerMateBLECharButtonUUID {
             guard let byte = data.first else { return }
