@@ -559,28 +559,30 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Scroll
 
     private func executeScroll(_ direction: ScrollDirection, magnitude: Int) {
-        let lines = max(1, min(20, magnitude))
+        let amount = max(1, min(20, magnitude))
 
-        // Encode the configured amount in the wheel event itself. Do not emit
-        // one event per line: that adds visible latency and lets applications
-        // coalesce the burst into a single scroll step.
+        // A discrete line event is normalized by some macOS applications:
+        // wheel1=1 and wheel1=20 can arrive as the same single notch.
+        // Use one pixel-based event instead. This keeps the action to one
+        // event (no latency-inducing burst) while preserving a real numeric
+        // delta that scales with Scroll Amount.
         var dx: Int32 = 0
         var dy: Int32 = 0
 
         switch direction {
         case .up:
-            dy = Int32(lines)
+            dy = Int32(amount)
         case .down:
-            dy = -Int32(lines)
+            dy = -Int32(amount)
         case .left:
-            dx = Int32(lines)
+            dx = Int32(amount)
         case .right:
-            dx = -Int32(lines)
+            dx = -Int32(amount)
         }
 
         guard let event = CGEvent(
             scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
-            units: .line,
+            units: .pixel,
             wheelCount: 2,
             wheel1: dy,
             wheel2: dx,
@@ -591,13 +593,16 @@ class CustomModeEngine: ObservableObject {
 
         event.setIntegerValueField(
             .scrollWheelEventIsContinuous,
-            value: 0
+            value: 1
         )
-
-        // Explicitly populate the fixed-point scroll fields as well as the
-        // constructor's integer delta. macOS documents these fields as the
-        // line/pixel scroll magnitude; some applications consume this field
-        // instead of wheel1 when interpreting synthetic scroll events.
+        event.setIntegerValueField(
+            .scrollWheelEventPointDeltaAxis1,
+            value: Int64(dy)
+        )
+        event.setIntegerValueField(
+            .scrollWheelEventPointDeltaAxis2,
+            value: Int64(dx)
+        )
         event.setDoubleValueField(
             .scrollWheelEventFixedPtDeltaAxis1,
             value: Double(dy)
@@ -606,7 +611,6 @@ class CustomModeEngine: ObservableObject {
             .scrollWheelEventFixedPtDeltaAxis2,
             value: Double(dx)
         )
-
         event.post(tap: .cgSessionEventTap)
     }
 
