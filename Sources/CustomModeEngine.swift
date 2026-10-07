@@ -633,6 +633,12 @@ class CustomModeEngine: ObservableObject {
 
         case .continuousShiftWheel:
             let pixels = max(1, min(20, amount))
+            executeCanvasRotateContinuousShiftWheel(
+                delta: Int32(pixels * rotationDelta)
+            )
+
+        case .shiftWheel:
+            let pixels = max(1, min(20, amount))
             executeCanvasRotateShiftWheel(
                 delta: Int32(pixels * rotationDelta)
             )
