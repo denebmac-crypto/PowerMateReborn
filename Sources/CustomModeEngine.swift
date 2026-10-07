@@ -60,7 +60,7 @@ enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .continuousShiftWheel:
-            return "CSP Continuous Shift + Wheel (No Cursor)"
+            return "Native Canvas Rotate (Wacom Event)"
         case .shiftWheel:
             return "Shift + Mouse Wheel (Discrete Fallback)"
         }
@@ -617,9 +617,9 @@ class CustomModeEngine: ObservableObject {
     ) {
         switch method {
         case .continuousShiftWheel:
-            let pixels = max(1, min(20, amount))
-            executeCanvasRotateContinuousShiftWheel(
-                delta: Int32(pixels * rotationDelta)
+            let steps = max(1, min(20, amount))
+            WacomNativeGestureEmitter.shared.sendRotation(
+                stepCount: Int32(steps * rotationDelta)
             )
 
         case .shiftWheel:
@@ -953,7 +953,7 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Cleanup
 
     func shutdown() {
-        endCanvasRotateContinuousShiftWheel()
+        WacomNativeGestureEmitter.shared.endRotation()
 
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
