@@ -85,21 +85,26 @@ final class WacomIOManagerBridge {
             options: []
         )
 
-        connection.remoteObjectInterface = NSXPCInterface(
+        let remoteInterface = NSXPCInterface(
             with: WacomIOManagerRemote.self
         )
+
+        remoteInterface.setClasses(
+            [NSDictionary.self, NSString.self, NSNumber.self],
+            for: #selector(WacomIOManagerRemote.postEvent(_:)),
+            argumentIndex: 0,
+            ofReply: false
+        )
+
+        connection.remoteObjectInterface = remoteInterface
 
         connection.interruptionHandler = {
             NSLog("Wacom IOManager XPC interrupted")
         }
 
         connection.invalidationHandler = { [weak self] in
-            let code: Int
-            let remoteWasPresent: Bool
-
             self?.lock.lock()
-            code = 0
-            remoteWasPresent = self?.remote != nil
+            let remoteWasPresent = self?.remote != nil
             self?.connection = nil
             self?.remote = nil
             self?.gestureActive = false
