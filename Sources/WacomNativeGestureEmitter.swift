@@ -46,7 +46,7 @@ final class WacomNativeGestureEmitter {
                 lock.unlock()
                 return
             }
-            zoomActive = true
+            active = true
         } else {
             guard postGestureEvent(amount: amount, phase: 2) else {
                 lock.unlock()
@@ -89,7 +89,7 @@ final class WacomNativeGestureEmitter {
                 lock.unlock()
                 return
             }
-            active = true
+            zoomActive = true
         } else {
             guard postZoomGestureEvent(amount: amount, phase: 2) else {
                 lock.unlock()
