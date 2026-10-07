@@ -561,49 +561,39 @@ class CustomModeEngine: ObservableObject {
     private func executeScroll(_ direction: ScrollDirection, magnitude: Int) {
         let lines = max(1, min(20, magnitude))
 
-        // Emit one discrete line event per configured line. Some applications
-        // normalize a large .line wheel delta to a single scroll step, so
-        // encoding "20 lines" as one event can look identical to "1 line".
-        // Repeating discrete one-line events makes the per-action amount
-        // unambiguous while preserving the existing line-based scroll mode.
+        // Encode the configured amount in the wheel event itself. Do not emit
+        // one event per line: that adds visible latency and lets applications
+        // coalesce the burst into a single scroll step.
         var dx: Int32 = 0
         var dy: Int32 = 0
 
         switch direction {
         case .up:
-            dy = 1
+            dy = Int32(lines)
         case .down:
-            dy = -1
+            dy = -Int32(lines)
         case .left:
-            dx = 1
+            dx = Int32(lines)
         case .right:
-            dx = -1
+            dx = -Int32(lines)
         }
 
-        for _ in 0..<lines {
-            guard let event = CGEvent(
-                scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
-                units: .line,
-                wheelCount: 2,
-                wheel1: dy,
-                wheel2: dx,
-                wheel3: 0
-            ) else {
-                return
-            }
-
-            event.setIntegerValueField(
-                .scrollWheelEventIsContinuous,
-                value: 0
-            )
-            event.post(tap: .cgSessionEventTap)
-
-            // Keep successive discrete line events far enough apart that
-            // macOS/applications do not coalesce a burst into one scroll step.
-            if lines > 1 {
-                Thread.sleep(forTimeInterval: 0.003)
-            }
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
+            units: .line,
+            wheelCount: 2,
+            wheel1: dy,
+            wheel2: dx,
+            wheel3: 0
+        ) else {
+            return
         }
+
+        event.setIntegerValueField(
+            .scrollWheelEventIsContinuous,
+            value: 0
+        )
+        event.post(tap: .cgSessionEventTap)
     }
 
     // MARK: - Keyboard Shortcut
