@@ -322,25 +322,25 @@ struct ActionConfigRow: View {
                             Slider(
                                 value: Binding(
                                     get: {
-                                        Double(max(1, min(20, config.scrollAmount)))
+                                        Double(max(1, min(100, config.scrollAmount)))
                                     },
                                     set: { value in
                                         config.scrollAmount = max(
                                             1,
-                                            min(20, Int(value.rounded()))
+                                            min(100, Int(value.rounded()))
                                         )
                                     }
                                 ),
-                                in: 1...20,
+                                in: 1...100,
                                 step: 1
                             )
                             .frame(width: 180)
 
-                            Text("\(max(1, min(20, config.scrollAmount)))")
+                            Text("\(max(1, min(100, config.scrollAmount)))")
                                 .monospacedDigit()
                                 .frame(width: 28, alignment: .trailing)
 
-                            Text("lines/step")
+                            Text("amount/step")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -447,7 +447,7 @@ struct ActionConfigRow: View {
                                 .frame(width: 54, alignment: .trailing)
                         }
 
-                        Text("Experimental Wacom-style magnification gesture: type 29, HID gesture type 8, zoom value field 113.")
+                        Text("Canvas magnification gesture.")
                             .foregroundStyle(.secondary)
                             .font(.caption)
 
