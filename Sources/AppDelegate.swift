@@ -463,9 +463,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         let alert = NSAlert()
         alert.messageText = "PowerMateReborn"
         alert.alertStyle = .informational
-        
-        // Set custom icon (logo) at the top
-        if let logoPath = Bundle.module.path(forResource: "logo", ofType: "svg") ?? Bundle.main.path(forResource: "logo", ofType: "svg"),
+
+        // Set custom icon (logo) at the top.
+        if let logoPath = Bundle.module.path(forResource: "logo", ofType: "svg")
+            ?? Bundle.main.path(forResource: "logo", ofType: "svg"),
            let logoImg = NSImage(contentsOfFile: logoPath) {
             alert.icon = logoImg
         }
@@ -474,12 +475,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         container.orientation = .vertical
         container.alignment = .centerX
         container.spacing = 8
-        
-        // Version info
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
-        let versionLabel = NSTextField(labelWithString: "Version \(version) (\(build))")
-        versionLabel.font = NSFont.systemFont(ofSize: 13)
+
+        let descriptionLabel = NSTextField(labelWithString: "A lightweight PowerMate driver for macOS")
+        descriptionLabel.font = NSFont.systemFont(ofSize: 13)
+        descriptionLabel.textColor = .labelColor
+        descriptionLabel.alignment = .center
+        descriptionLabel.isEditable = false
+        descriptionLabel.isSelectable = false
+        descriptionLabel.drawsBackground = false
+        descriptionLabel.isBordered = false
+        container.addArrangedSubview(descriptionLabel)
+
+        let platformLabel = NSTextField(labelWithString: "Built for Apple Silicon & Intel")
+        platformLabel.font = NSFont.systemFont(ofSize: 12)
+        platformLabel.textColor = .secondaryLabelColor
+        platformLabel.alignment = .center
+        platformLabel.isEditable = false
+        platformLabel.isSelectable = false
+        platformLabel.drawsBackground = false
+        platformLabel.isBordered = false
+        container.addArrangedSubview(platformLabel)
+
+        let featureLabel = NSTextField(labelWithString: "USB-first • Wacom Native Rotation & Zoom")
+        featureLabel.font = NSFont.systemFont(ofSize: 12)
+        featureLabel.textColor = .secondaryLabelColor
+        featureLabel.alignment = .center
+        featureLabel.isEditable = false
+        featureLabel.isSelectable = false
+        featureLabel.drawsBackground = false
+        featureLabel.isBordered = false
+        container.addArrangedSubview(featureLabel)
+
+        let versionLabel = NSTextField(labelWithString: "Version 1.0.01")
+        versionLabel.font = NSFont.systemFont(ofSize: 12)
         versionLabel.textColor = .secondaryLabelColor
         versionLabel.alignment = .center
         versionLabel.isEditable = false
@@ -487,87 +515,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         versionLabel.drawsBackground = false
         versionLabel.isBordered = false
         container.addArrangedSubview(versionLabel)
-        
-        // Device status
-        let connected = powerMate.isConnected
-        let deviceStatus = connected ? "🟢 PowerMate Connected" : "⚪️ PowerMate Disconnected"
-        let statusLabel = NSTextField(labelWithString: deviceStatus)
-        statusLabel.font = NSFont.boldSystemFont(ofSize: 13)
-        statusLabel.textColor = .labelColor
-        statusLabel.alignment = .center
-        statusLabel.isEditable = false
-        statusLabel.isSelectable = false
-        statusLabel.drawsBackground = false
-        statusLabel.isBordered = false
-        container.addArrangedSubview(statusLabel)
-        
-        // Audio info
-        let audioInfo = "Audio: \(volumeController.activeDeviceName) (\(volumeController.volumeMethod.rawValue))"
-        let audioLabel = NSTextField(labelWithString: audioInfo)
-        audioLabel.font = NSFont.systemFont(ofSize: 12)
-        audioLabel.textColor = .secondaryLabelColor
-        audioLabel.alignment = .center
-        audioLabel.isEditable = false
-        audioLabel.isSelectable = false
-        audioLabel.drawsBackground = false
-        audioLabel.isBordered = false
-        container.addArrangedSubview(audioLabel)
-        
-        // Brightness info
-        let brightnessInfo = "Brightness: \(brightnessController.method.rawValue)"
-        let brightnessLabel = NSTextField(labelWithString: brightnessInfo)
-        brightnessLabel.font = NSFont.systemFont(ofSize: 12)
-        brightnessLabel.textColor = .secondaryLabelColor
-        brightnessLabel.alignment = .center
-        brightnessLabel.isEditable = false
-        brightnessLabel.isSelectable = false
-        brightnessLabel.drawsBackground = false
-        brightnessLabel.isBordered = false
-        container.addArrangedSubview(brightnessLabel)
-        
-        // Tip about multi-display
-        let tipLabel = NSTextField(wrappingLabelWithString: "Tip: By default, the knob dims all displays together. You can uncheck 'Sync All Displays' in the menu to control each monitor individually based on mouse location.")
-        tipLabel.font = NSFont.systemFont(ofSize: 11)
-        tipLabel.textColor = .secondaryLabelColor
-        tipLabel.alignment = .center
-        tipLabel.isEditable = false
-        tipLabel.isSelectable = false
-        tipLabel.drawsBackground = false
-        tipLabel.isBordered = false
-        tipLabel.maximumNumberOfLines = 0
-        tipLabel.lineBreakMode = .byWordWrapping
-        tipLabel.translatesAutoresizingMaskIntoConstraints = false
-        container.addArrangedSubview(tipLabel)
-        NSLayoutConstraint.activate([
-            tipLabel.widthAnchor.constraint(equalToConstant: 300)
-        ])
-        
-        // Spacer
-        let spacer = NSView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
-        container.addArrangedSubview(spacer)
-        NSLayoutConstraint.activate([
-            spacer.heightAnchor.constraint(equalToConstant: 4)
-        ])
-        
-        // Report Issue button
-        let issueButton = NSButton(title: "Report Issue on GitHub", target: self, action: #selector(openGitHubIssues))
-        issueButton.bezelStyle = .rounded
-        container.addArrangedSubview(issueButton)
-        
-        // Add padding
+
+        let creditLabel = NSTextField(labelWithString: "© 2026 spica & Yuna")
+        creditLabel.font = NSFont.systemFont(ofSize: 12)
+        creditLabel.textColor = .secondaryLabelColor
+        creditLabel.alignment = .center
+        creditLabel.isEditable = false
+        creditLabel.isSelectable = false
+        creditLabel.drawsBackground = false
+        creditLabel.isBordered = false
+        container.addArrangedSubview(creditLabel)
+
         container.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 10, right: 10)
         container.layoutSubtreeIfNeeded()
-        
+
         let requiredSize = container.fittingSize
-        
-        // Wrap the container in an explicit fixed-size NSView. 
-        // NSAlert requires the accessoryView to have a fully specified frame.
         let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: requiredSize.height))
         container.frame = wrapper.bounds
         container.autoresizingMask = [.width, .height]
         wrapper.addSubview(container)
-        
+
         alert.accessoryView = wrapper
         alert.addButton(withTitle: "OK")
 
