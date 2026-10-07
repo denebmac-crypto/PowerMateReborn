@@ -597,6 +597,12 @@ class CustomModeEngine: ObservableObject {
                 value: 0
             )
             event.post(tap: .cgSessionEventTap)
+
+            // Keep successive discrete line events far enough apart that
+            // macOS/applications do not coalesce a burst into one scroll step.
+            if lines > 1 {
+                Thread.sleep(forTimeInterval: 0.003)
+            }
         }
     }
 
