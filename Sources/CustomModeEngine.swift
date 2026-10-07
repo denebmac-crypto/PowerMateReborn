@@ -131,8 +131,8 @@ struct CodableActionConfig: Codable, Equatable {
     // can have its own sensitivity without changing global device settings.
     var scrollAmount: Int = 3
     var canvasRotateMethod: CanvasRotateMethod = .wacomNativeGesture
-    var canvasRotateAmount: Int = 1
-    var canvasZoomAmount: Int = 1
+    var canvasRotateAmount: Double = 1.0
+    var canvasZoomAmount: Double = 1.0
 
     init(
         type: CodableActionType = .unassigned,
@@ -144,8 +144,8 @@ struct CodableActionConfig: Codable, Equatable {
         osc: OSCConfig = OSCConfig(),
         scrollAmount: Int = 3,
         canvasRotateMethod: CanvasRotateMethod = .wacomNativeGesture,
-        canvasRotateAmount: Int = 1,
-        canvasZoomAmount: Int = 1
+        canvasRotateAmount: Double = 1.0,
+        canvasZoomAmount: Double = 1.0
     ) {
         self.type = type
         self.scrollDirection = scrollDirection
@@ -186,8 +186,8 @@ struct CodableActionConfig: Codable, Equatable {
         osc = try container.decodeIfPresent(OSCConfig.self, forKey: .osc) ?? OSCConfig()
         scrollAmount = try container.decodeIfPresent(Int.self, forKey: .scrollAmount) ?? 3
         canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .continuousShiftWheel
-        canvasRotateAmount = try container.decodeIfPresent(Int.self, forKey: .canvasRotateAmount) ?? 1
-        canvasZoomAmount = try container.decodeIfPresent(Int.self, forKey: .canvasZoomAmount) ?? 1
+        canvasRotateAmount = try container.decodeIfPresent(Double.self, forKey: .canvasRotateAmount) ?? 1.0
+        canvasZoomAmount = try container.decodeIfPresent(Double.self, forKey: .canvasZoomAmount) ?? 1.0
     }
 }
 
@@ -563,9 +563,10 @@ class CustomModeEngine: ObservableObject {
 
         case .canvasZoom:
             guard rotationDelta != 0 else { return }
-            let steps = max(1, min(20, action.canvasZoomAmount))
+            let amount = max(1.0, min(5.0, action.canvasZoomAmount))
             WacomNativeGestureEmitter.shared.sendZoom(
-                stepCount: Int32(rotationDelta * steps)
+                stepCount: Int32(rotationDelta),
+                amountPerStep: Float(amount * 0.1)
             )
         }
     }
@@ -653,17 +654,18 @@ class CustomModeEngine: ObservableObject {
     private func executeCanvasRotate(
         method: CanvasRotateMethod,
         rotationDelta: Int,
-        amount: Int,
+        amount: Double,
         action: CodableActionConfig
     ) {
         switch method {
         case .wacomNativeGesture:
-            let steps = max(1, min(20, amount))
+            let zoomSafeAmount = max(1.0, min(6.0, amount))
             // PowerMate's positive rotation is opposite to Wacom's native
             // canvas-rotation convention, so invert only the native gesture
             // sign. The event format and amount are otherwise unchanged.
             WacomNativeGestureEmitter.shared.sendRotation(
-                stepCount: Int32(-steps * rotationDelta)
+                stepCount: Int32(-rotationDelta),
+                amountPerStep: Float(zoomSafeAmount)
             )
 
         case .optionF13F14:
