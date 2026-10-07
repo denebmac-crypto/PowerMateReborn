@@ -629,10 +629,7 @@ class CustomModeEngine: ObservableObject {
         case .optionF13F14:
             let steps = max(1, min(20, amount))
             let keyCode: CGKeyCode = rotationDelta > 0 ? 105 : 107
-            for _ in 0..<steps {
-                postKeyEvent(keyCode: keyCode, flags: .maskAlternate, keyDown: true)
-                postKeyEvent(keyCode: keyCode, flags: .maskAlternate, keyDown: false)
-            }
+            executeOptionFunctionKeyRotation(keyCode: keyCode, steps: steps)
 
         case .continuousShiftWheel:
             let pixels = max(1, min(20, amount))
@@ -797,6 +794,54 @@ class CustomModeEngine: ObservableObject {
             shiftUp.flags = []
             shiftUp.post(tap: .cgSessionEventTap)
         }
+    }
+
+    /// Emits Option + F13/F14 as one modifier-held burst.
+    /// PowerMate delta determines how many F13/F14 pulses are generated.
+    private func executeOptionFunctionKeyRotation(
+        keyCode: CGKeyCode,
+        steps: Int
+    ) {
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        // Hold Option across the whole burst so multiple PowerMate steps do
+        // not produce a sequence of unrelated modifier transitions.
+        if let optionDown = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 58,
+            keyDown: true
+        ) {
+            optionDown.flags = .maskAlternate
+            optionDown.post(tap: .cgSessionEventTap)
+        }
+
+        for _ in 0..<steps {
+            postKeyEvent(
+                keyCode: keyCode,
+                flags: .maskAlternate,
+                keyDown: true
+            )
+            postKeyEvent(
+                keyCode: keyCode,
+                flags: .maskAlternate,
+                keyDown: false
+            )
+        }
+
+        if let optionUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 58,
+            keyDown: false
+        ) {
+            optionUp.flags = []
+            optionUp.post(tap: .cgSessionEventTap)
+        }
+
+        NSLog(
+            "Custom: Option+F13/F14 rotation keyCode=%d steps=%d",
+            keyCode,
+            steps
+        )
     }
 
     private func postKeyEvent(
