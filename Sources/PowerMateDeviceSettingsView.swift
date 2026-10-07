@@ -25,6 +25,12 @@ struct PowerMateDeviceSettingsView: View {
         NavigationSplitView {
             List {
                 Section("Profiles") {
+                    Button {
+                        showingNewProfile = true
+                    } label: {
+                        Label("Add New Profile", systemImage: "plus")
+                    }
+
                     ForEach(store.configuration.profiles) { profile in
                         profileTree(profile)
                     }
@@ -55,15 +61,6 @@ struct PowerMateDeviceSettingsView: View {
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 240, ideal: 275, max: 380)
             .navigationTitle("PowerMates")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingNewProfile = true
-                    } label: {
-                        Label("New Profile", systemImage: "plus")
-                    }
-                }
-            }
         } detail: {
             detailView
         }
