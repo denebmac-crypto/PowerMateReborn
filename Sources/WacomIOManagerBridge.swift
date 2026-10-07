@@ -89,8 +89,14 @@ final class WacomIOManagerBridge {
             with: WacomIOManagerRemote.self
         )
 
+        let allowedEventClasses: Set<AnyHashable> = [
+            NSDictionary.self,
+            NSString.self,
+            NSNumber.self
+        ]
+
         remoteInterface.setClasses(
-            [NSDictionary.self, NSString.self, NSNumber.self],
+            allowedEventClasses,
             for: #selector(WacomIOManagerRemote.postEvent(_:)),
             argumentIndex: 0,
             ofReply: false
