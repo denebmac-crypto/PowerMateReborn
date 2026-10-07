@@ -427,7 +427,7 @@ struct ActionConfigRow: View {
                         .frame(width: 300)
 
                         HStack(spacing: 10) {
-                            Text("Wheel Amount")
+                            Text("Rotation Amount")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 
@@ -453,11 +453,9 @@ struct ActionConfigRow: View {
                                 .frame(width: 54, alignment: .trailing)
                         }
 
-                        Text(
-                            config.canvasRotateMethod == .continuousShiftWheel
-                                ? "Continuous CSP rotation: Shift + mouse wheel gesture stays active while PowerMate input continues; cursor never moves."
-                                : "Discrete Shift + mouse wheel fallback"
-                        )
+                        Text(rotationMethodHelp(config.canvasRotateMethod))
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
                         .foregroundStyle(.secondary)
                         .font(.caption)
                     }
@@ -466,6 +464,19 @@ struct ActionConfigRow: View {
             }
         }
         .padding(.vertical, 6)
+    }
+
+    private func rotationMethodHelp(_ method: CanvasRotateMethod) -> String {
+        switch method {
+        case .wacomNativeGesture:
+            return "Wacom-style native gesture event stream: begin, rotation amount, and end phases; no wheel or cursor movement."
+        case .optionF13F14:
+            return "Option is held while F13/F14 pulses are generated from each PowerMate rotation step."
+        case .continuousShiftWheel:
+            return "Continuous CSP rotation: Shift + mouse wheel gesture stays active while PowerMate input continues; cursor never moves."
+        case .shiftWheel:
+            return "Discrete Shift + mouse wheel fallback."
+        }
     }
 
     private func startShortcutRecording() {
