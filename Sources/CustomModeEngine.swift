@@ -559,38 +559,45 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Scroll
 
     private func executeScroll(_ direction: ScrollDirection, magnitude: Int) {
-        let normalizedMagnitude = max(1, min(20, magnitude))
+        let lines = max(1, min(20, magnitude))
+
+        // Emit one discrete line event per configured line. Some applications
+        // normalize a large .line wheel delta to a single scroll step, so
+        // encoding "20 lines" as one event can look identical to "1 line".
+        // Repeating discrete one-line events makes the per-action amount
+        // unambiguous while preserving the existing line-based scroll mode.
         var dx: Int32 = 0
         var dy: Int32 = 0
 
         switch direction {
         case .up:
-            dy = Int32(normalizedMagnitude)
+            dy = 1
         case .down:
-            dy = Int32(-normalizedMagnitude)
+            dy = -1
         case .left:
-            dx = Int32(normalizedMagnitude)
+            dx = 1
         case .right:
-            dx = Int32(-normalizedMagnitude)
+            dx = -1
         }
 
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
-            units: .line,
-            wheelCount: 2,
-            wheel1: dy,
-            wheel2: dx,
-            wheel3: 0
-        ) else {
-            return
-        }
+        for _ in 0..<lines {
+            guard let event = CGEvent(
+                scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
+                units: .line,
+                wheelCount: 2,
+                wheel1: dy,
+                wheel2: dx,
+                wheel3: 0
+            ) else {
+                return
+            }
 
-        // The persisted per-action Scroll Amount is the final wheel delta.
-        event.setIntegerValueField(
-            .scrollWheelEventIsContinuous,
-            value: 0
-        )
-        event.post(tap: .cgSessionEventTap)
+            event.setIntegerValueField(
+                .scrollWheelEventIsContinuous,
+                value: 0
+            )
+            event.post(tap: .cgSessionEventTap)
+        }
     }
 
     // MARK: - Keyboard Shortcut
