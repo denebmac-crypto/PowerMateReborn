@@ -24,6 +24,8 @@ class PowerMateBLETransport: NSObject, PowerMateTransport {
 
     private(set) var ledBrightness: UInt8 = 0
     private var shouldScan = false
+    private let bluetoothQueue = DispatchQueue(label: "com.denebmac.PowerMateReborn.bluetooth", qos: .userInteractive)
+    private var ignoreButtonEventsUntil: Date?
 
     var isConnected: Bool {
         peripheral?.state == .connected
@@ -37,7 +39,7 @@ class PowerMateBLETransport: NSObject, PowerMateTransport {
         shouldScan = true
         centralManager = CBCentralManager(
             delegate: self,
-            queue: nil,
+            queue: bluetoothQueue,
             options: [CBCentralManagerOptionShowPowerAlertKey: true]
         )
     }
@@ -53,6 +55,7 @@ class PowerMateBLETransport: NSObject, PowerMateTransport {
         peripheral = nil
         ledCharacteristic = nil
         lastButtonState = false
+        ignoreButtonEventsUntil = nil
     }
 
     func setLEDBrightness(_ brightness: UInt8) {
@@ -156,7 +159,10 @@ extension PowerMateBLETransport: CBCentralManagerDelegate {
 
         self.peripheral = peripheral
         peripheral.delegate = self
-        central.connect(peripheral, options: nil)
+        central.connect(
+            peripheral,
+            options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true]
+        )
     }
 
     func centralManager(
@@ -203,6 +209,7 @@ extension PowerMateBLETransport: CBCentralManagerDelegate {
 
         ledCharacteristic = nil
         lastButtonState = false
+        ignoreButtonEventsUntil = Date().addingTimeInterval(0.75)
 
         DispatchQueue.main.async {
             self.transportDelegate?.transportDidDisconnect(
@@ -212,8 +219,23 @@ extension PowerMateBLETransport: CBCentralManagerDelegate {
         }
 
         if shouldScan {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.startScanning()
+            bluetoothQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.shouldScan, let central = self.centralManager else { return }
+
+                // Prefer reconnecting to the same peripheral before starting a
+                // new scan. This avoids unnecessary discovery gaps after a
+                // transient BLE link timeout.
+                if peripheral.state != .connected {
+                    central.connect(
+                        peripheral,
+                        options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true]
+                    )
+                }
+
+                self.bluetoothQueue.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    guard let self, self.shouldScan, peripheral.state != .connected else { return }
+                    self.startScanning()
+                }
             }
         }
     }
@@ -290,6 +312,12 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
         }
 
         if subscribedCount > 0 {
+            // Some BLE PowerMates can emit their current button state immediately
+            // after notifications are enabled. Ignore that startup transition so
+            // connecting the device can never synthesize a press/long-press and
+            // unexpectedly change the application's active mode.
+            ignoreButtonEventsUntil = Date().addingTimeInterval(0.75)
+
             let identity = PowerMateHardwareIdentity.bluetooth(
                 peripheralUUID: peripheral.identifier.uuidString
             )
@@ -362,6 +390,13 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
             }
         } else if characteristic.uuid == kPowerMateBLECharButtonUUID {
             guard let byte = data.first else { return }
+
+            if let ignoreUntil = ignoreButtonEventsUntil {
+                if Date() < ignoreUntil {
+                    return
+                }
+                ignoreButtonEventsUntil = nil
+            }
 
             let pressed = byte != 0
             if pressed != lastButtonState {
