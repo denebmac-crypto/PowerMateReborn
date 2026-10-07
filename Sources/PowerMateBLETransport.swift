@@ -21,6 +21,7 @@ class PowerMateBLETransport: NSObject, PowerMateTransport {
     private var peripheral: CBPeripheral?
     private var ledCharacteristic: CBCharacteristic?
     private var lastButtonState = false
+    private var buttonStateInitialized = false
 
     private(set) var ledBrightness: UInt8 = 0
     private var shouldScan = false
@@ -55,6 +56,7 @@ class PowerMateBLETransport: NSObject, PowerMateTransport {
         peripheral = nil
         ledCharacteristic = nil
         lastButtonState = false
+        buttonStateInitialized = false
         ignoreButtonEventsUntil = nil
     }
 
@@ -209,6 +211,7 @@ extension PowerMateBLETransport: CBCentralManagerDelegate {
 
         ledCharacteristic = nil
         lastButtonState = false
+        buttonStateInitialized = false
         ignoreButtonEventsUntil = Date().addingTimeInterval(0.75)
 
         DispatchQueue.main.async {
@@ -400,6 +403,18 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
             }
 
             let pressed = byte != 0
+
+            // The first button notification after subscription is the device's
+            // current state, not necessarily a new user action. Establish the
+            // baseline without forwarding it to the gesture recognizer. This
+            // prevents a startup "hold" state from becoming a synthetic
+            // long-press after the connection has already completed.
+            if !buttonStateInitialized {
+                buttonStateInitialized = true
+                lastButtonState = pressed
+                return
+            }
+
             if pressed != lastButtonState {
                 lastButtonState = pressed
 
