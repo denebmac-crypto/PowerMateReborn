@@ -381,13 +381,14 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
                 return
             }
 
-            DispatchQueue.main.async {
-                self.transportDelegate?.transport(
-                    self,
-                    identity: identity,
-                    didRotate: delta
-                )
-            }
+            // Rotation is latency-sensitive. CoreBluetooth already delivers
+            // this callback on the dedicated bluetoothQueue, so do not enqueue
+            // each wheel step onto the main queue.
+            self.transportDelegate?.transport(
+                self,
+                identity: identity,
+                didRotate: delta
+            )
         } else if characteristic.uuid == kPowerMateBLECharButtonUUID {
             guard let byte = data.first else { return }
 
