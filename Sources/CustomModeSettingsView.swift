@@ -456,8 +456,6 @@ struct ActionConfigRow: View {
                         Text(rotationMethodHelp(config.canvasRotateMethod))
                             .foregroundStyle(.secondary)
                             .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
                     }
                 }
                 .padding(.leading, 4)
