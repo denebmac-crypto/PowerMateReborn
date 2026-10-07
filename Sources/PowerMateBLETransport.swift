@@ -367,6 +367,7 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
         )
 
         if characteristic.uuid == kPowerMateBLECharRotationUUID {
+            let receiveTime = DispatchTime.now().uptimeNanoseconds
             guard let byte = data.first else { return }
 
             // Griffin's BLE PowerMate does not send a signed relative delta.
@@ -387,6 +388,12 @@ extension PowerMateBLETransport: CBPeripheralDelegate {
             // Rotation is latency-sensitive. CoreBluetooth already delivers
             // this callback on the dedicated bluetoothQueue, so do not enqueue
             // each wheel step onto the main queue.
+            NSLog(
+                "BLE Timing: notification t=%.6f byte=%d delta=%d",
+                Double(receiveTime) / 1_000_000_000.0,
+                byte,
+                delta
+            )
             self.transportDelegate?.transport(
                 self,
                 identity: identity,
