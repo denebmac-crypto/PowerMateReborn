@@ -621,16 +621,10 @@ class CustomModeEngine: ObservableObject {
         }
     }
 
-    /// CSP officially documents Shift + mouse wheel as a canvas-rotation
-    /// operation. The important part here is preserving the scroll gesture:
-    /// one began event, followed by changed events, then one ended event.
-    ///
-    /// The previous implementation ended the gesture after only 0.20 s of
-    /// inactivity. That could split a deliberate single-device turn into
-    /// separate gestures. The old two-device test accidentally kept this
-    /// shared stream alive because the second device kept resetting the
-    /// timeout. Keep that useful behavior intentionally, without requiring
-    /// two devices or moving the cursor.
+    /// Sends the same native Wacom rotation gesture sequence used by the
+    /// Wacom driver: gesture begin (61/5), amount (5/float), then gesture end
+    /// (62/5) after the input stream becomes idle. No cursor movement or
+    /// application-specific shortcut emulation is involved.
     private func executeCanvasRotateContinuousShiftWheel(delta: Int32) {
         guard delta != 0 else { return }
         WacomIOManagerBridge.shared.sendRotation(stepCount: delta)
