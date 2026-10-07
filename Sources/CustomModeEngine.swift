@@ -49,8 +49,8 @@ enum ScrollDirection: String, Codable, CaseIterable {
 }
 
 enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
-    /// Native canvas-rotation gesture using the same low-level Quartz
-    /// event representation emitted by Wacom IOManager.
+    /// CSP's native continuous canvas-rotation gesture:
+    /// Shift + mouse wheel, kept alive as one continuous scroll stream.
     case continuousShiftWheel
     /// Discrete fallback retained for compatibility/debugging.
     case shiftWheel
@@ -60,7 +60,7 @@ enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .continuousShiftWheel:
-            return "Native Canvas Rotate (Wacom Gesture)"
+            return "CSP Continuous Shift + Wheel (No Cursor)"
         case .shiftWheel:
             return "Shift + Mouse Wheel (Discrete Fallback)"
         }
@@ -215,6 +215,14 @@ class CustomModeEngine: ObservableObject {
 
     // Extended press state for device-assigned profiles.
     private var deviceExtendedPressActions: [PowerMateHardwareIdentity: CodableActionConfig] = [:]
+
+    // One shared cursor-free CSP rotation gesture across all physical PowerMates.
+    // Multiple devices can feed the same continuous scroll stream safely.
+    private var continuousCanvasRotateActive = false
+    private var continuousCanvasRotateEndWorkItem: DispatchWorkItem?
+    // 0.20 s was short enough to split slow single-device turns into separate
+    // began/ended gestures. 0.50 s keeps the stream alive during deliberate turns.
+    private let continuousCanvasRotateIdleTimeout: TimeInterval = 0.50
 
     // CC accumulator for continuous rotation actions
     private var ccAccumulators: [UInt8: Float] = [:]  // ccNumber -> current 0-127 float
@@ -629,10 +637,136 @@ class CustomModeEngine: ObservableObject {
     /// The previous implementation ended the gesture after only 0.20 s of
     /// inactivity. That could split a deliberate single-device turn into
     /// separate gestures. The old two-device test accidentally kept this
-    /// shared stream alive because the second device ke    /// Native canvas rotation is emitted by WacomNativeGestureEmitter.
-    /// The emitter produces the same type-29 gesture event representation that
-    /// the Wacom IOManager posts for its native rotation gesture.
-ce,
+    /// shared stream alive because the second device kept resetting the
+    /// timeout. Keep that useful behavior intentionally, without requiring
+    /// two devices or moving the cursor.
+    private func executeCanvasRotateContinuousShiftWheel(delta: Int32) {
+        guard delta != 0 else { return }
+
+        continuousCanvasRotateEndWorkItem?.cancel()
+
+        let source = CGEventSource(stateID: .hidSystemState)
+        let phase: CGScrollPhase = continuousCanvasRotateActive ? .changed : .began
+
+        if !continuousCanvasRotateActive {
+            guard let shiftDown = CGEvent(
+                keyboardEventSource: source,
+                virtualKey: 56,
+                keyDown: true
+            ) else {
+                return
+            }
+
+            shiftDown.flags = .maskShift
+            shiftDown.post(tap: .cgSessionEventTap)
+            continuousCanvasRotateActive = true
+        }
+
+        guard let wheel = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: delta,
+            wheel2: 0,
+            wheel3: 0
+        ) else {
+            endCanvasRotateContinuousShiftWheel()
+            return
+        }
+
+        wheel.flags = .maskShift
+        wheel.setIntegerValueField(
+            .scrollWheelEventIsContinuous,
+            value: 1
+        )
+        wheel.setDoubleValueField(
+            .scrollWheelEventFixedPtDeltaAxis1,
+            value: Double(delta)
+        )
+        wheel.setIntegerValueField(
+            .scrollWheelEventScrollPhase,
+            value: Int64(phase.rawValue)
+        )
+        wheel.setIntegerValueField(
+            .scrollWheelEventMomentumPhase,
+            value: 0
+        )
+        wheel.post(tap: .cgSessionEventTap)
+
+        let endWorkItem = DispatchWorkItem { [weak self] in
+            self?.endCanvasRotateContinuousShiftWheel()
+        }
+        continuousCanvasRotateEndWorkItem = endWorkItem
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + continuousCanvasRotateIdleTimeout,
+            execute: endWorkItem
+        )
+    }
+
+    private func endCanvasRotateContinuousShiftWheel() {
+        continuousCanvasRotateEndWorkItem?.cancel()
+        continuousCanvasRotateEndWorkItem = nil
+
+        guard continuousCanvasRotateActive else { return }
+
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        if let wheelEnd = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: 0,
+            wheel2: 0,
+            wheel3: 0
+        ) {
+            wheelEnd.flags = .maskShift
+            wheelEnd.setIntegerValueField(
+                .scrollWheelEventIsContinuous,
+                value: 1
+            )
+            wheelEnd.setDoubleValueField(
+                .scrollWheelEventFixedPtDeltaAxis1,
+                value: 0
+            )
+            wheelEnd.setIntegerValueField(
+                .scrollWheelEventScrollPhase,
+                value: Int64(CGScrollPhase.ended.rawValue)
+            )
+            wheelEnd.setIntegerValueField(
+                .scrollWheelEventMomentumPhase,
+                value: 0
+            )
+            wheelEnd.post(tap: .cgSessionEventTap)
+        }
+
+        if let shiftUp = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 56,
+            keyDown: false
+        ) {
+            shiftUp.flags = []
+            shiftUp.post(tap: .cgSessionEventTap)
+        }
+
+        continuousCanvasRotateActive = false
+    }
+
+    /// Known-good cursor-free fallback: CSP's Shift + mouse wheel.
+    private func executeCanvasRotateShiftWheel(delta: Int32) {
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        if let shiftDown = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: 56,
+            keyDown: true
+        ) {
+            shiftDown.flags = .maskShift
+            shiftDown.post(tap: .cgSessionEventTap)
+        }
+
+        if let wheel = CGEvent(
+            scrollWheelEvent2Source: source,
             units: .pixel,
             wheelCount: 1,
             wheel1: delta,
@@ -819,7 +953,7 @@ ce,
     // MARK: - Cleanup
 
     func shutdown() {
-        WacomNativeGestureEmitter.shared.endRotation()
+        endCanvasRotateContinuousShiftWheel()
 
         for (_, action) in deviceExtendedPressActions {
             executeExtendedPressEnd(action)
