@@ -82,7 +82,7 @@ final class WacomIOManagerBridge {
 
         let connection = NSXPCConnection(
             machServiceName: serviceName,
-            options: .privileged
+            options: []
         )
 
         connection.remoteObjectInterface = NSXPCInterface(
@@ -94,18 +94,32 @@ final class WacomIOManagerBridge {
         }
 
         connection.invalidationHandler = { [weak self] in
+            let code: Int
+            let remoteWasPresent: Bool
+
             self?.lock.lock()
+            code = 0
+            remoteWasPresent = self?.remote != nil
             self?.connection = nil
             self?.remote = nil
             self?.gestureActive = false
             self?.lock.unlock()
-            NSLog("Wacom IOManager XPC invalidated")
+
+            NSLog(
+                "Wacom IOManager XPC invalidated (remote=%@)",
+                remoteWasPresent ? "yes" : "no"
+            )
         }
 
         connection.resume()
 
         let proxy = connection.remoteObjectProxyWithErrorHandler { error in
-            NSLog("Wacom IOManager XPC error: %@", String(describing: error))
+            NSLog(
+                "Wacom IOManager XPC postEvent error domain=%@ code=%ld userInfo=%@",
+                error.domain,
+                error.code,
+                error.userInfo
+            )
         } as! WacomIOManagerRemote
 
         self.connection = connection
