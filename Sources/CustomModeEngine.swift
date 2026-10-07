@@ -27,6 +27,7 @@ enum CodableActionType: String, Codable, CaseIterable, Identifiable {
         case .midiNote:   return "MIDI Note"
         case .osc:        return "OSC Message"
         case .canvasRotate: return "Canvas Rotate"
+        case .canvasZoom: return "Canvas Zoom (Wacom Native)"
         }
     }
 }
@@ -130,6 +131,7 @@ struct CodableActionConfig: Codable, Equatable {
     var scrollAmount: Int = 3
     var canvasRotateMethod: CanvasRotateMethod = .wacomNativeGesture
     var canvasRotateAmount: Int = 1
+    var canvasZoomAmount: Int = 1
 
     init(
         type: CodableActionType = .unassigned,
@@ -141,7 +143,8 @@ struct CodableActionConfig: Codable, Equatable {
         osc: OSCConfig = OSCConfig(),
         scrollAmount: Int = 3,
         canvasRotateMethod: CanvasRotateMethod = .wacomNativeGesture,
-        canvasRotateAmount: Int = 1
+        canvasRotateAmount: Int = 1,
+        canvasZoomAmount: Int = 1
     ) {
         self.type = type
         self.scrollDirection = scrollDirection
@@ -153,6 +156,7 @@ struct CodableActionConfig: Codable, Equatable {
         self.scrollAmount = scrollAmount
         self.canvasRotateMethod = canvasRotateMethod
         self.canvasRotateAmount = canvasRotateAmount
+        self.canvasZoomAmount = canvasZoomAmount
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -166,6 +170,7 @@ struct CodableActionConfig: Codable, Equatable {
         case scrollAmount
         case canvasRotateMethod
         case canvasRotateAmount
+        case canvasZoomAmount
     }
 
     init(from decoder: Decoder) throws {
@@ -181,6 +186,7 @@ struct CodableActionConfig: Codable, Equatable {
         scrollAmount = try container.decodeIfPresent(Int.self, forKey: .scrollAmount) ?? 3
         canvasRotateMethod = try container.decodeIfPresent(CanvasRotateMethod.self, forKey: .canvasRotateMethod) ?? .continuousShiftWheel
         canvasRotateAmount = try container.decodeIfPresent(Int.self, forKey: .canvasRotateAmount) ?? 1
+        canvasZoomAmount = try container.decodeIfPresent(Int.self, forKey: .canvasZoomAmount) ?? 1
     }
 }
 
@@ -552,6 +558,13 @@ class CustomModeEngine: ObservableObject {
                 rotationDelta: rotationDelta,
                 amount: action.canvasRotateAmount,
                 action: action
+            )
+
+        case .canvasZoom:
+            guard rotationDelta != 0 else { return }
+            let steps = max(1, min(20, action.canvasZoomAmount))
+            WacomNativeGestureEmitter.shared.sendZoom(
+                stepCount: Int32(rotationDelta * steps)
             )
         }
     }
