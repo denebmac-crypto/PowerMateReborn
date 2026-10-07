@@ -177,6 +177,13 @@ class PowerMateManager: PowerMateTransportDelegate {
     ) {
         guard delta != 0 else { return }
 
+        let receiveTime = DispatchTime.now().uptimeNanoseconds
+        NSLog(
+            "BLE Timing: manager t=%.6f delta=%d",
+            Double(receiveTime) / 1_000_000_000.0,
+            delta
+        )
+
         let state = state(for: identity)
         if state.buttonDownTime != nil {
             state.rotatedWhilePressed = true
