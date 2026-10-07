@@ -22,6 +22,9 @@ final class WacomNativeGestureEmitter {
     private var endWorkItem: DispatchWorkItem?
     private var zoomActive = false
     private var zoomEndWorkItem: DispatchWorkItem?
+    private let zoomEventQueue = DispatchQueue(label: "PowerMateReborn.WacomZoom", qos: .userInteractive)
+    private let zoomInterpolationSteps: Int = 8
+    private let zoomInterpolationInterval: TimeInterval = 0.002
     private let idleTimeout: TimeInterval = 0.50
 
     private init() {}
@@ -85,15 +88,20 @@ final class WacomNativeGestureEmitter {
                 lock.unlock()
                 return
             }
-            guard postZoomGestureEvent(amount: amount, phase: 2) else {
-                lock.unlock()
-                return
-            }
             zoomActive = true
-        } else {
-            guard postZoomGestureEvent(amount: amount, phase: 2) else {
-                lock.unlock()
-                return
+        }
+
+        // PowerMate reports rotation continuously, but a single large
+        // magnification delta makes CSP visibly "jump". Preserve the exact
+        // total zoom amount while distributing it into several tiny changed
+        // events over only a few milliseconds. The first event is immediate,
+        // so this does not introduce the kind of perceptible latency caused
+        // by shortcut bursts.
+        let microAmount = amount / Float(zoomInterpolationSteps)
+        for index in 0..<zoomInterpolationSteps {
+            let delay = zoomInterpolationInterval * Double(index)
+            zoomEventQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.postZoomGestureEvent(amount: microAmount, phase: 2)
             }
         }
 
