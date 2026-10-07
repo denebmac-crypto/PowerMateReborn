@@ -46,8 +46,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
     private let osd = OSDOverlay()
 
     // Multi-mode
-    private var currentMode: KnobMode = .volume
-    private var enabledModes: [KnobMode] = [.volume, .brightness, .midi, .custom]
+    private var currentMode: KnobMode = .custom
+    // Custom is the only selectable mode in the current UI. The other mode
+    // implementations remain intact for now, but are intentionally unavailable.
+    private var enabledModes: [KnobMode] = [.custom]
 
     // Settings
     private var stepSize: Float = 0.03  // 3% per rotation tick
@@ -196,13 +198,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         // Enabled Modes Config
         let modesMenu = NSMenu()
         modesMenu.autoenablesItems = false
-        for mode in KnobMode.allCases {
-            let item = NSMenuItem(title: mode.rawValue, action: #selector(toggleMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode.rawValue
-            item.state = enabledModes.contains(mode) ? .on : .off
-            modesMenu.addItem(item)
-        }
+        // Only Custom is selectable. Other mode implementations remain in the
+        // codebase, but are intentionally hidden from the current UI.
+        let customModeItem = NSMenuItem(
+            title: KnobMode.custom.rawValue,
+            action: #selector(toggleMode(_:)),
+            keyEquivalent: ""
+        )
+        customModeItem.target = self
+        customModeItem.representedObject = KnobMode.custom.rawValue
+        customModeItem.state = .on
+        modesMenu.addItem(customModeItem)
 
         let modesItem = NSMenuItem(title: "Enabled Modes", action: nil, keyEquivalent: "")
         modesItem.submenu = modesMenu
@@ -344,22 +350,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
     }
 
     @objc private func toggleMode(_ sender: NSMenuItem) {
+        // Custom is intentionally the only selectable mode.
+        // Keep the action harmless so it can never be disabled.
         guard let rawValue = sender.representedObject as? String,
-              let mode = KnobMode(rawValue: rawValue) else { return }
+              rawValue == KnobMode.custom.rawValue else { return }
 
-        if enabledModes.contains(mode) {
-            // Don't allow disabling the last mode or the current mode
-            if enabledModes.count > 1 {
-                enabledModes.removeAll { $0 == mode }
-                if currentMode == mode {
-                    currentMode = enabledModes[0]
-                    updateStatusDisplay()
-                    updateLEDForLevel()
-                }
-            }
-        } else {
-            enabledModes.append(mode)
-        }
+        currentMode = .custom
+        enabledModes = [.custom]
         refreshMenu()
     }
 
@@ -1090,22 +1087,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
 
     private func loadSettings() {
         let d = UserDefaults.standard
-        if let mode = d.string(forKey: "powermate.currentMode"), let m = KnobMode(rawValue: mode) {
-            currentMode = m
-        }
-        if let modes = d.array(forKey: "powermate.enabledModes") as? [String] {
-            var parsed = modes.compactMap { KnobMode(rawValue: $0) }
-            if !parsed.contains(.custom) {
-                parsed.append(.custom)
-            }
-            if !parsed.isEmpty {
-                enabledModes = parsed
-            }
-        }
 
-        if !enabledModes.contains(currentMode) {
-            currentMode = enabledModes.first ?? .volume
-        }
+        // The current UI exposes Custom only. Ignore legacy saved mode selections
+        // so an older configuration can never restore Volume/Brightness/MIDI.
+        currentMode = .custom
+        enabledModes = [.custom]
         if d.object(forKey: "powermate.stepSize") != nil {
             stepSize = d.float(forKey: "powermate.stepSize")
         }
@@ -1142,8 +1128,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
 
     private func saveSettings() {
         let d = UserDefaults.standard
-        d.set(currentMode.rawValue, forKey: "powermate.currentMode")
-        d.set(enabledModes.map { $0.rawValue }, forKey: "powermate.enabledModes")
+        // Persist the current UI policy as Custom-only, regardless of legacy settings.
+        d.set(KnobMode.custom.rawValue, forKey: "powermate.currentMode")
+        d.set([KnobMode.custom.rawValue], forKey: "powermate.enabledModes")
         d.set(stepSize, forKey: "powermate.stepSize")
         d.set(ledFollowsLevel, forKey: "powermate.ledFollowsLevel")
         d.set(powerMate.longPressThreshold, forKey: "powermate.longPressThreshold")
