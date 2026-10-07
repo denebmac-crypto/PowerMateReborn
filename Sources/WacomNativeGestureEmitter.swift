@@ -80,7 +80,7 @@ final class WacomNativeGestureEmitter {
             return false
         }
 
-        CGEventSetType(event, gestureType)
+        event.type = gestureType
 
         // kCGEventGestureHIDType = 5
         event.setIntegerValueField(gestureField, value: 5)
