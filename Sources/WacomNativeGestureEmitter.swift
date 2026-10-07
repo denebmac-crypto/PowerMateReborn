@@ -68,6 +68,95 @@ final class WacomNativeGestureEmitter {
         )
     }
 
+
+    func sendZoom(stepCount: Int32, amountPerStep: Float = 0.1) {
+        guard stepCount != 0 else { return }
+
+        lock.lock()
+        endWorkItem?.cancel()
+        endWorkItem = nil
+
+        let amount = Float(stepCount) * amountPerStep
+
+        if !active {
+            guard postZoomGestureEvent(amount: 0, phase: 1) else {
+                lock.unlock()
+                return
+            }
+            guard postZoomGestureEvent(amount: amount, phase: 2) else {
+                lock.unlock()
+                return
+            }
+            active = true
+        } else {
+            guard postZoomGestureEvent(amount: amount, phase: 2) else {
+                lock.unlock()
+                return
+            }
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.endZoom()
+        }
+        endWorkItem = workItem
+        lock.unlock()
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + idleTimeout,
+            execute: workItem
+        )
+    }
+
+    private func endZoom() {
+        lock.lock()
+        endWorkItem?.cancel()
+        endWorkItem = nil
+
+        guard active else {
+            lock.unlock()
+            return
+        }
+
+        _ = postZoomGestureEvent(amount: 0, phase: 4)
+        active = false
+        lock.unlock()
+    }
+
+    private func postZoomGestureEvent(amount: Float, phase: Int64) -> Bool {
+        guard
+            let event = CGEvent(source: nil),
+            let gestureType = CGEventType(rawValue: 29),
+            let gestureField = CGEventField(rawValue: 110),
+            let zoomField = CGEventField(rawValue: 113),
+            let phaseField = CGEventField(rawValue: 132)
+        else {
+            NSLog("Wacom Native Zoom: failed to allocate event")
+            return false
+        }
+
+        event.type = gestureType
+
+        // kIOHIDEventTypeZoom = 8
+        event.setIntegerValueField(gestureField, value: 8)
+
+        // kCGEventGestureZoomValue = 113
+        event.setDoubleValueField(zoomField, value: Double(amount))
+
+        // kCGSGesturePhaseBegan = 1
+        // kCGSGesturePhaseChanged = 2
+        // kCGSGesturePhaseEnded = 4
+        event.setIntegerValueField(phaseField, value: phase)
+
+        event.post(tap: .cghidEventTap)
+
+        NSLog(
+            "Wacom Native Zoom: type=29 field110=8 field113=%.3f field132=%lld",
+            amount,
+            phase
+        )
+        return true
+    }
+
     func endRotation() {
         lock.lock()
         endWorkItem?.cancel()
