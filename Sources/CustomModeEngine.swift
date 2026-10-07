@@ -574,7 +574,7 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Scroll
 
     private func executeScroll(_ direction: ScrollDirection, magnitude: Int) {
-        let amount = max(1, min(100, magnitude))
+        let amount = max(10, min(100, magnitude))
 
         // A discrete line event is normalized by some macOS applications:
         // wheel1=1 and wheel1=20 can arrive as the same single notch.
