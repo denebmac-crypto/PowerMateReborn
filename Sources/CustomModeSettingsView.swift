@@ -331,7 +331,7 @@ struct ActionConfigRow: View {
                                         )
                                     }
                                 ),
-                                in: 1...20,
+                                in: 1...5,
                                 step: 1
                             )
                             .frame(width: 180)
@@ -426,9 +426,9 @@ struct ActionConfigRow: View {
 
                             Slider(
                                 value: Binding(
-                                    get: { Double(max(1, min(20, config.canvasZoomAmount))) },
+                                    get: { Double(max(1, min(5, config.canvasZoomAmount))) },
                                     set: { value in
-                                        config.canvasZoomAmount = max(1, min(20, Int(value.rounded())))
+                                        config.canvasZoomAmount = max(1, min(5, Int(value.rounded())))
                                     }
                                 ),
                                 in: 1...20,
@@ -436,7 +436,7 @@ struct ActionConfigRow: View {
                             )
                             .frame(width: 180)
 
-                            Text("\(max(1, min(20, config.canvasZoomAmount)))")
+                            Text("\(max(1, min(5, config.canvasZoomAmount)))")
                                 .monospacedDigit()
                                 .frame(width: 54, alignment: .trailing)
                         }
