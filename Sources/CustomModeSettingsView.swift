@@ -111,7 +111,7 @@ struct NewProfileSheet: View {
             TextField("Profile Name", text: $profileName)
                 .textFieldStyle(.roundedBorder)
 
-            TextField("Bundle ID (optional)", text: $bundleIdentifier)
+            TextField("Bundle ID", text: $bundleIdentifier)
                 .textFieldStyle(.roundedBorder)
 
             HStack {
@@ -139,7 +139,10 @@ struct NewProfileSheet: View {
                     isPresented = false
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(
+                    profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
             }
         }
         .padding()
