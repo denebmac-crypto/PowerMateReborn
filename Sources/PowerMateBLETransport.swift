@@ -110,11 +110,8 @@ class PowerMateBLETransport: NSObject, PowerMateTransport {
         }
 
         NSLog("BLE: Scanning for PowerMate Bluetooth...")
-        // Some macOS/CoreBluetooth combinations do not surface this PowerMate
-        // reliably when the service UUID is used as the scan filter. Scan the
-        // local BLE advertisements instead and accept only a PowerMate match.
         centralManager.scanForPeripherals(
-            withServices: nil,
+            withServices: [kPowerMateBLEServiceUUID],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
     }
@@ -153,14 +150,6 @@ extension PowerMateBLETransport: CBCentralManagerDelegate {
             peripheral.name ??
             advertisementData[CBAdvertisementDataLocalNameKey] as? String ??
             "Unknown"
-
-        let advertisedServices =
-            advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
-        let isPowerMate =
-            name.localizedCaseInsensitiveContains("powermate") ||
-            advertisedServices.contains(kPowerMateBLEServiceUUID)
-
-        guard isPowerMate else { return }
 
         NSLog(
             "BLE: Discovered PowerMate Bluetooth: %@ (RSSI: %@)",
