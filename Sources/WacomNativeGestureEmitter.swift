@@ -31,13 +31,28 @@ final class WacomNativeGestureEmitter {
         endWorkItem?.cancel()
         endWorkItem = nil
 
-        let phase: Int64 = active ? 2 : 1
         let amount = Float(stepCount) * amountPerStep
 
-        let posted = postGestureEvent(amount: amount, phase: phase)
-        if posted {
+        // Match Wacom's verified start sequence:
+        // phase=1/amount=0, followed immediately by phase=2/actual amount.
+        if !active {
+            guard postGestureEvent(amount: 0, phase: 1) else {
+                lock.unlock()
+                return
+            }
+            guard postGestureEvent(amount: amount, phase: 2) else {
+                lock.unlock()
+                return
+            }
             active = true
+        } else {
+            guard postGestureEvent(amount: amount, phase: 2) else {
+                lock.unlock()
+                return
+            }
         }
+
+        let posted = true
 
         let workItem = DispatchWorkItem { [weak self] in
             self?.endRotation()
