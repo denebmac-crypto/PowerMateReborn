@@ -11,40 +11,51 @@ struct CustomModeSettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedProfileID) {
-                Section(header: Text("Profiles")) {
-                    ForEach(engine.profiles) { profile in
-                        HStack {
-                            Image(systemName: profile.iconName)
-                                .foregroundColor(profile.isGlobal ? .blue : .primary)
-                                .frame(width: 20)
-                            VStack(alignment: .leading) {
-                                Text(profile.name)
-                                    .fontWeight(profile.isGlobal ? .medium : .regular)
-                                if engine.activeProfileID == profile.id {
-                                    Text("Active")
-                                        .font(.caption2)
-                                        .foregroundColor(.green)
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    showingNewProfile = true
+                } label: {
+                    Label("Add New Profile", systemImage: "plus.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+
+                List(selection: $selectedProfileID) {
+                    Section(header: Text("Profiles")) {
+                        ForEach(engine.profiles) { profile in
+                            HStack {
+                                Image(systemName: profile.iconName)
+                                    .foregroundColor(profile.isGlobal ? .blue : .primary)
+                                    .frame(width: 20)
+                                VStack(alignment: .leading) {
+                                    Text(profile.name)
+                                        .fontWeight(profile.isGlobal ? .medium : .regular)
+                                    if engine.activeProfileID == profile.id {
+                                        Text("Active")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
                                 }
                             }
-                        }
-                        .tag(profile.id)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(profile.name)
-                        .accessibilityValue(engine.activeProfileID == profile.id ? "Active Profile" : "Inactive Profile")
-                        .accessibilityAddTraits(.isButton)
-                        .contextMenu {
-                            if !profile.isGlobal {
-                                Button("Remove") {
-                                    engine.removeProfile(id: profile.id)
-                                    if selectedProfileID == profile.id {
-                                        selectedProfileID = engine.profiles.first?.id
+                            .tag(profile.id)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel(profile.name)
+                            .accessibilityValue(engine.activeProfileID == profile.id ? "Active Profile" : "Inactive Profile")
+                            .accessibilityAddTraits(.isButton)
+                            .contextMenu {
+                                if !profile.isGlobal {
+                                    Button("Remove") {
+                                        engine.removeProfile(id: profile.id)
+                                        if selectedProfileID == profile.id {
+                                            selectedProfileID = engine.profiles.first?.id
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-
                 }
             }
             .navigationSplitViewColumnWidth(min: 160, ideal: 200, max: 250)
