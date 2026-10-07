@@ -126,11 +126,11 @@ struct NewProfileSheet: View {
                     let name = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
                     let bundle = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                    guard !name.isEmpty else { return }
+                    guard !name.isEmpty, !bundle.isEmpty else { return }
 
                     engine.addProfile(
                         name: name,
-                        bundleIdentifier: bundle.isEmpty ? "manual.(UUID().uuidString)" : bundle,
+                        bundleIdentifier: bundle,
                         iconName: "app"
                     )
                     if let newProfile = engine.profiles.last {
