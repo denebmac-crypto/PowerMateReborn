@@ -14,6 +14,7 @@ enum CodableActionType: String, Codable, CaseIterable, Identifiable {
     case midiNote
     case osc
     case canvasRotate
+    case canvasZoom
 
     var id: String { rawValue }
 
