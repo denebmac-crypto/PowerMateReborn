@@ -28,7 +28,7 @@ enum CodableActionType: String, Codable, CaseIterable, Identifiable {
         case .midiNote:   return "MIDI Note"
         case .osc:        return "OSC Message"
         case .canvasRotate: return "Canvas Rotate"
-        case .canvasZoom: return "Canvas Zoom (Wacom Native)"
+        case .canvasZoom: return "Canvas Zoom"
         }
     }
 }
@@ -574,7 +574,7 @@ class CustomModeEngine: ObservableObject {
     // MARK: - Scroll
 
     private func executeScroll(_ direction: ScrollDirection, magnitude: Int) {
-        let amount = max(1, min(20, magnitude))
+        let amount = max(1, min(100, magnitude))
 
         // A discrete line event is normalized by some macOS applications:
         // wheel1=1 and wheel1=20 can arrive as the same single notch.
