@@ -60,7 +60,7 @@ enum CanvasRotateMethod: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .continuousShiftWheel:
-            return "CSP Continuous Shift + Wheel (No Cursor)"
+            return "Native Canvas Rotate (Wacom Event)"
         case .shiftWheel:
             return "Shift + Mouse Wheel (Discrete Fallback)"
         }
