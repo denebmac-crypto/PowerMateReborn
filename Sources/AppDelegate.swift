@@ -854,28 +854,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
         identity: PowerMateHardwareIdentity,
         delta: Int
     ) {
-        switch currentMode {
-        case .volume:
-            let adjustment = Float(delta) * stepSize
-            volumeController.adjustVolume(by: adjustment)
-            osd.showVolume(
-                level: volumeController.getVolume(),
-                muted: volumeController.isMuted()
-            )
-
-        case .brightness:
-            let adjustment = Float(delta) * stepSize
-            brightnessController.updateTargetDisplay()
-            brightnessController.adjustBrightness(by: adjustment)
-            osd.showBrightness(
-                level: brightnessController.getCurrentBrightness()
-            )
-
-        case .midi:
-            let adjustment = Float(delta) * stepSize
-            midiController.adjustCC(by: adjustment)
-
-        case .custom:
+        // BLE custom actions stay on the CoreBluetooth queue for minimum latency.
+        // AppKit and the non-custom controller paths are always confined to main.
+        if currentMode == .custom {
             guard let profile = deviceConfiguration.profile(for: identity) else {
                 NSLog("Custom: no Profile assigned to %@", identity.identifier)
                 return
@@ -893,10 +874,47 @@ class AppDelegate: NSObject, NSApplicationDelegate, PowerMateDelegate, VolumeCha
                 stepSize: stepSize,
                 profile: profile
             )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.updateLEDForLevel(for: identity)
+                self.updateMenuLevels()
+            }
+            return
         }
 
-        updateLEDForLevel(for: identity)
-        updateMenuLevels()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            switch self.currentMode {
+            case .volume:
+                let adjustment = Float(delta) * self.stepSize
+                self.volumeController.adjustVolume(by: adjustment)
+                self.osd.showVolume(
+                    level: self.volumeController.getVolume(),
+                    muted: self.volumeController.isMuted()
+                )
+
+            case .brightness:
+                let adjustment = Float(delta) * self.stepSize
+                self.brightnessController.updateTargetDisplay()
+                self.brightnessController.adjustBrightness(by: adjustment)
+                self.osd.showBrightness(
+                    level: self.brightnessController.getCurrentBrightness()
+                )
+
+            case .midi:
+                let adjustment = Float(delta) * self.stepSize
+                self.midiController.adjustCC(by: adjustment)
+
+            case .custom:
+                self.powerMateDidRotate(identity: identity, delta: delta)
+                return
+            }
+
+            self.updateLEDForLevel(for: identity)
+            self.updateMenuLevels()
+        }
     }
 
     func powerMateButtonPressed(
